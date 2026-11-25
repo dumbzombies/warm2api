@@ -1,0 +1,35 @@
+{
+  "name": "warm2api",
+  "version": "0.7.0",
+  "description": "Pool Warm subscriptions behind one OpenAI- and Anthropic-compatible endpoint.",
+  "license": "MIT",
+  "type": "module",
+  "private": false,
+  "homepage": "https://github.com/dumbzombies/warm2api#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dumbzombies/warm2api.git"
+  },
+  "keywords": ["warm", "openai", "anthropic", "proxy", "gateway", "bun"],
+  "engines": {
+    "bun": ">=1.1"
+  },
+  "bin": {
+    "warm2api": "./src/main.ts"
+  },
+  "files": ["src", "plugins", "test", "install.sh", "install.ps1", "README.md"],
+  "scripts": {
+    "start": "bun run src/main.ts start",
+    "serve": "bun run src/main.ts serve",
+    "stop": "bun run src/main.ts stop",
+    "status": "bun run src/main.ts status",
+    "test": "bun test",
+    "build:bin": "bun build --compile --target=bun ./src/main.ts --outfile=./dist/warm2api",
+    "build:plugins": "bun build src/main.ts --target=bun --outfile=plugins/omp/dist/warm2api.mjs && bun build src/main.ts --target=bun --outfile=plugins/opencode/dist/warm2api.mjs && bun build src/main.ts --target=bun --outfile=plugins/hermes/dist/warm2api.mjs"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.68",
+    "@types/bun": "latest",
+    "openai": "^6"
+  }
+}

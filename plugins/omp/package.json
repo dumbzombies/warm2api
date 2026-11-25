@@ -1,0 +1,17 @@
+{
+  "name": "warm2api-omp-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "pi/omp provider extension that points the agent at a local warm2api proxy.",
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "omp": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}

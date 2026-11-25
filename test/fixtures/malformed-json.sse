@@ -1,0 +1,6 @@
+event: message_start
+data: {"type":"message_start","message":{"id":"msg_malformed","type":"message","role":"assistant","model":"gpt-5.6-luna","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":9,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta",
+

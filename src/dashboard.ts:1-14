@@ -1,0 +1,12 @@
+export interface LoginView {
+  id: string;
+  status: "pending" | "complete" | "error";
+  userCode?: string;
+  verificationUri?: string;
+  verificationUriComplete?: string;
+  expiresIn?: number;
+  interval?: number;
+  accountId?: string;
+  label?: string;
+  message?: string;
+}

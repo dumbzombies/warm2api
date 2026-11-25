@@ -1,0 +1,990 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0a0a0b">
+<title>warm2api</title>
+<style>
+  :root {
+    --bg: #0a0a0b; --side: #0d0d10; --surface: #121214; --surface-2: #17171b; --surface-3: #1f1f25;
+    --border: #1e1e23; --border-strong: #2c2c33;
+    --text: #ededf0; --muted: #a9a9b4; --faint: #85858f;
+    --accent: #2dd4bf; --accent-soft: rgba(45,212,191,.12); --accent-border: rgba(45,212,191,.32);
+    --on-accent: #05201c;
+    --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+    --radius: 16px; --radius-sm: 9px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { color-scheme: dark; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.55 var(--font); -webkit-font-smoothing: antialiased; padding-bottom: env(safe-area-inset-bottom); }
+  ::selection { background: var(--accent); color: var(--on-accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 5px; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #26262d; border-radius: 8px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-track { background: transparent; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; text-underline-offset: 2px; }
+  button {
+    font: 600 13px/1 var(--font); color: var(--text); background: var(--surface-2);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 9px 14px;
+    cursor: pointer; transition: border-color .18s ease, background .18s ease, transform .12s ease;
+  }
+  button:hover { border-color: #3d3d49; background: var(--surface-3); }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  button.primary:hover { background: #46e0cb; border-color: #46e0cb; }
+  button.danger { color: var(--bad); border-color: rgba(248,113,113,.34); }
+  button.danger:hover { background: rgba(248,113,113,.1); border-color: rgba(248,113,113,.5); }
+  button:disabled { opacity: .55; cursor: wait; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); }
+  .faint { color: var(--faint); }
+
+  /* ---------- shell ---------- */
+  .shell { display: grid; grid-template-columns: 236px minmax(0,1fr); min-height: 100vh; }
+  .side { position: sticky; top: 0; align-self: start; height: 100vh; display: flex; flex-direction: column;
+    background: var(--side); border-right: 1px solid var(--border); padding: 20px 14px 16px; }
+  .brand { display: flex; align-items: center; gap: 11px; padding: 0 8px; min-width: 0; }
+  .mark { width: 32px; height: 32px; border-radius: 10px; flex: none; background: var(--surface-2);
+    border: 1px solid var(--border-strong); display: grid; place-items: center;
+    font: 700 15px/1 var(--mono); color: var(--accent); }
+  .brand h1 { font-size: 15px; font-weight: 650; letter-spacing: -.01em; white-space: nowrap; }
+  .brand .sub { color: var(--faint); font-size: 12px; font-weight: 450; }
+
+  .tabs { display: flex; flex-direction: column; gap: 2px; margin-top: 24px; }
+  .tab { position: relative; display: flex; align-items: center; gap: 10px; width: 100%;
+    font: 600 13.5px/1 var(--font); color: var(--muted); background: transparent;
+    border: 1px solid transparent; border-radius: var(--radius-sm); padding: 10px 11px; text-align: left;
+    transition: color .15s ease, background .15s ease; }
+  .tab:hover { color: var(--text); background: var(--surface-2); border-color: transparent; }
+  .tab.active { color: var(--text); background: var(--surface-2); }
+  .tab.active::before { content: ""; position: absolute; left: -1px; top: 9px; bottom: 9px; width: 2px;
+    border-radius: 2px; background: var(--accent); }
+  .tab .ico { width: 16px; height: 16px; flex: none; opacity: .9; }
+  .callout { background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 11px;
+    padding: 10px 14px; font-weight: 500; font-size: 12px; color: #d8d8e0; margin: 1px 10px 0 18px; opacity: .92; }
+
+  .side-sp { flex: 1; }
+  .side-foot { display: flex; flex-direction: column; gap: 9px; padding: 0 8px; }
+  .status { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 550; color: var(--muted); }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+  .status.ok { color: var(--ok); } .status.ok .dot { background: var(--ok); box-shadow: 0 0 0 3px rgba(74,222,128,.12); }
+  .status.warn { color: var(--warn); } .status.warn .dot { background: var(--warn); box-shadow: 0 0 0 3px rgba(251,191,36,.12); }
+  .status.bad { color: var(--bad); } .status.bad .dot { background: var(--bad); box-shadow: 0 0 0 3px rgba(248,113,113,.12); }
+  .side-actions { display: flex; gap: 8px; }
+  .side-actions button { flex: 1; padding: 8px 10px; font-size: 12.5px; }
+  .synced { font-size: 12px; }
+  .nokey { font-size: 11.5px; line-height: 1.45; color: var(--faint); }
+
+  .content { min-width: 0; padding: 26px clamp(18px, 3.5vw, 40px) 40px; }
+  .page { max-width: 1120px; margin: 0 auto; }
+
+  /* ---------- panels ---------- */
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+  .panel + .panel, .panel + .grid-charts, .grid-charts + .panel, .hero + .grid-charts, .hero + .panel, .panel + .hero { margin-top: 14px; }
+  .panel-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+  .panel-head h2 { font-size: 13.5px; font-weight: 650; letter-spacing: .01em; }
+  .panel-head .hint { font-size: 12px; color: var(--faint); margin-left: auto; font-variant-numeric: tabular-nums; }
+
+  /* ---------- hero ---------- */
+  .hero { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 20px 22px 6px; }
+  .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .hero-label { font-size: 11.5px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .hero-id { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted); min-width: 0; }
+  .hero-id .sep { color: var(--border-strong); }
+  .hero-num { font-size: clamp(38px, 5.5vw, 52px); font-weight: 700; letter-spacing: -.03em; line-height: 1.05;
+    margin-top: 10px; font-variant-numeric: tabular-nums; }
+  .hero-num .unit { font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 10px; }
+  .track { height: 7px; background: var(--surface-3); border-radius: 999px; margin: 16px 0 10px; overflow: hidden; }
+  .track > div { height: 100%; width: 0; border-radius: 999px; background: var(--accent);
+    transition: width .7s cubic-bezier(.22,1,.36,1); }
+  .track.low > div { background: var(--warn); }
+  .track.empty > div { background: var(--bad); }
+  .hero-meta { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+  .hero-meta .right { display: flex; gap: 16px; align-items: baseline; }
+  .hero-meta b { color: var(--text); font-weight: 650; font-variant-numeric: tabular-nums; }
+  .hero-meta .pct { font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .statrow { display: flex; flex-wrap: wrap; gap: 10px 36px; padding: 16px 0 18px;
+    border-top: 1px solid var(--border); margin-top: 16px; }
+  .statrow .item { display: flex; flex-direction: column; gap: 3px; min-width: 72px; }
+  .statrow .k { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--faint); white-space: nowrap; }
+  .statrow .v { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .statrow .v.mono { font-size: 14px; }
+
+  /* ---------- charts ---------- */
+  .grid-charts { display: grid; grid-template-columns: 3fr 2fr; gap: 14px; }
+  .grid-charts .panel { min-width: 0; }
+  svg.chart { width: 100%; height: 120px; display: block; }
+  .chart-legend { display: flex; gap: 18px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .chart-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
+  /* ---------- tables ---------- */
+  .tablewrap { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 11px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--faint); padding: 6px 10px; border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
+  td { padding: 7px 10px; border-bottom: 1px solid #18181c; white-space: nowrap; vertical-align: middle; }
+  tbody tr { transition: background .12s ease; }
+  tbody tr:hover { background: var(--surface-2); }
+  tbody tr:last-child td { border-bottom: none; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; font: 650 10.5px/1 var(--font); letter-spacing: .06em; text-transform: uppercase;
+    padding: 4px 7px; border-radius: 6px; background: var(--surface-3); color: var(--muted); }
+  .badge.ok { background: rgba(74,222,128,.12); color: var(--ok); }
+  .badge.bad { background: rgba(248,113,113,.12); color: var(--bad); }
+
+  /* ---------- model spend rows ---------- */
+  .mrow { display: grid; grid-template-columns: minmax(0,1fr) 190px 64px; gap: 12px; align-items: center;
+    padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .mrow:last-child { border-bottom: none; }
+  .mrow .name { font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mrow .bar { height: 5px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
+  .mrow .bar > div { height: 100%; background: var(--accent); border-radius: 999px; width: 0;
+    transition: width .6s cubic-bezier(.22,1,.36,1); }
+  .mrow .val { font-size: 12.5px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* ---------- account cards ---------- */
+  .acct { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 18px; margin-bottom: 12px; }
+  .acct-top { display: flex; align-items: flex-start; gap: 12px; }
+  .acct-top .grow { flex: 1; min-width: 0; }
+  .acct-name { font-weight: 650; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acct-sub { font-size: 12px; color: var(--faint); font-family: var(--mono); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .pill { font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase;
+    padding: 4px 8px; border-radius: 7px; background: var(--surface-3); color: var(--muted); flex: none; }
+  .pill.active { background: rgba(74,222,128,.12); color: var(--ok); }
+  .pill.cooling, .pill.retired { background: rgba(251,191,36,.12); color: var(--warn); }
+  .pill.disabled, .pill.needs_login, .pill.needs_verification { background: rgba(248,113,113,.12); color: var(--bad); }
+  .acct .track { margin: 14px 0 8px; }
+  .acct-meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .acct-stats { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--faint);
+    font-variant-numeric: tabular-nums; }
+  .acct-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .acct-actions button { padding: 8px 12px; font-size: 12.5px; }
+
+  /* ---------- forms / gate ---------- */
+  .gate { max-width: 420px; }
+  .field { display: block; margin-top: 14px; }
+  .field input { font: 500 16px/1 var(--font); width: 100%; padding: 12px 14px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); }
+  .field input:focus { border-color: var(--accent-border); }
+  .hint { font-size: 12.5px; color: var(--faint); margin-top: 10px; line-height: 1.5; }
+  .hint code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2);
+    padding: 2px 5px; border-radius: 4px; color: var(--muted); }
+  .loginbox { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .codebox { font: 700 30px/1.1 var(--mono); letter-spacing: .2em; text-align: center;
+    padding: 18px 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border-strong);
+    user-select: all; color: var(--accent); }
+  .linkrow { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+  .linkrow a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+
+  /* ---------- models ---------- */
+  .modelrow { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px 14px; align-items: baseline;
+    padding: 11px 0; border-bottom: 1px solid var(--border); }
+  .modelrow:last-child { border-bottom: none; }
+  .modelrow .name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+  .modelrow .idline { font-size: 12px; color: var(--faint); font-family: var(--mono); overflow-wrap: anywhere; }
+  .modelrow .meta { text-align: right; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .caps { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+  .cap { font: 600 10px/1 var(--font); letter-spacing: .05em; text-transform: uppercase; color: var(--faint);
+    border: 1px solid var(--border-strong); border-radius: 5px; padding: 3px 5px; }
+
+  .empty { text-align: center; color: var(--faint); padding: 34px 10px; }
+  .empty b { display: block; color: var(--text); font-size: 15px; margin-bottom: 6px; font-weight: 650; }
+  .empty button { margin-top: 14px; }
+
+  /* ---------- toast ---------- */
+  .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 12px); background: var(--surface-3); border: 1px solid var(--border-strong);
+    color: var(--text); padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 550;
+    opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease; z-index: 50;
+    max-width: calc(100vw - 32px); }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 980px) {
+    .shell { display: block; }
+    .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center;
+      gap: 12px 14px; padding: 12px 18px; border-right: 0; border-bottom: 1px solid var(--border); }
+    .brand { margin-right: auto; padding: 0; }
+    .tabs { order: 3; flex-direction: row; width: 100%; margin-top: 2px; overflow-x: auto; padding-bottom: 2px; }
+    .tab { width: auto; }
+    .tab.active::before { left: 9px; right: 9px; top: auto; bottom: 0; width: auto; height: 2px; }
+    .side-foot { flex-direction: row; align-items: center; gap: 10px; }
+    .synced { display: none; }
+    .content { padding: 16px 18px 40px; }
+    .grid-charts { grid-template-columns: 1fr; }
+    .statrow { gap: 10px 24px; }
+  }
+  @media (max-width: 640px) {
+    body { font-size: 15px; }
+    .side { position: sticky; top: 0; z-index: 30; background: var(--bg); padding: 10px 12px; gap: 10px; }
+    .brand h1 { font-size: 14px; }
+    .brand .sub { font-size: 11px; }
+    .tabs { flex-wrap: wrap; overflow-x: visible; gap: 4px; }
+    .tab { flex: 1 1 auto; justify-content: center; padding: 9px 11px; font-size: 13px; }
+    .side-foot { width: 100%; justify-content: space-between; }
+    .side-actions { flex: 0 0 auto; }
+    .side-actions button, button { min-height: 40px; }
+    .status { font-size: 12px; }
+    .content { padding: 12px 12px calc(28px + env(safe-area-inset-bottom)); }
+    .panel { padding: 14px; border-radius: 14px; }
+    .panel-head { gap: 8px; flex-wrap: wrap; }
+    .panel-head .hint { margin-left: 0; }
+    .hero { padding: 16px 16px 4px; border-radius: 14px; }
+    .hero-top { gap: 8px; }
+    .hero-num { font-size: 40px; margin-top: 6px; }
+    .hero-num .unit { font-size: 13px; margin-left: 6px; }
+    .hero-meta { gap: 6px 12px; font-size: 12px; }
+    .hero-meta .right { gap: 12px; flex-wrap: wrap; }
+    .hero-id { font-size: 12px; overflow-wrap: anywhere; }
+    .statrow { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px 10px; padding: 14px 0; }
+    .statrow .item { min-width: 0; }
+    .statrow .k { letter-spacing: .05em; }
+    .statrow .v, .statrow .v.mono { font-size: 14px; overflow-wrap: anywhere; }
+    .grid-charts { gap: 10px; }
+    svg.chart { height: 96px; }
+    .chart-legend { gap: 12px; flex-wrap: wrap; }
+    .mrow { grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "name val" "bar bar";
+      gap: 4px 10px; padding: 9px 0; }
+    .mrow .name { grid-area: name; } .mrow .val { grid-area: val; font-size: 12px; }
+    .mrow .bar { grid-area: bar; margin-top: 4px; }
+    .tablewrap { margin: 0 -2px; padding: 0 2px; }
+    th, td { padding: 6px 8px; }
+    th { font-size: 10px; letter-spacing: .06em; }
+    .acct { padding: 14px; }
+    .acct-actions button { flex: 1; }
+    .codebox { font-size: 24px; letter-spacing: .16em; }
+    .linkrow { flex-wrap: wrap; }
+    .linkrow a { flex: 1 1 100%; }
+    .modelrow { grid-template-columns: minmax(0,1fr); }
+    .modelrow .meta { text-align: left; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="side">
+    <div class="brand">
+      <div class="mark">w</div>
+      <div>
+        <h1>warm2api</h1>
+        <div class="sub">local pool proxy</div>
+      </div>
+    </div>
+
+    <nav class="tabs" role="tablist" aria-label="Dashboard sections">
+      <button class="tab active" role="tab" id="tab-accounts" data-tab="accounts"
+        aria-controls="panel-accounts" aria-selected="true">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 13h8V3H3z"/><path d="M13 21h8v-8h-8z"/><path d="M13 9h8V3h-8z"/><path d="M3 21h8v-4H3z"/>
+        </svg>
+        Overview</button>
+      <button class="tab" role="tab" id="tab-activity" data-tab="activity"
+        aria-controls="panel-activity" aria-selected="false" tabindex="-1">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 12h4l3 8 4-16 3 8h4"/>
+        </svg>
+        Activity</button>
+      <button class="tab" role="tab" id="tab-models" data-tab="models"
+        aria-controls="panel-models" aria-selected="false" tabindex="-1">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/>
+          <path d="M7 7h.01M7 17h.01"/>
+        </svg>
+        Models</button>
+    </nav>
+
+    <div class="side-sp"></div>
+    <div class="callout" id="callout" hidden>Unlock to manage accounts</div>
+    <div class="side-foot">
+      <div class="status" id="status" role="status" aria-live="polite"><span class="dot"></span><span id="statusTxt">connecting&hellip;</span></div>
+      <div class="side-actions">
+        <button id="refreshBtn" aria-label="Refresh quotas">Refresh</button>
+        <button id="addBtn" class="primary">Add</button>
+      </div>
+      <div class="synced faint" id="updatedTxt">connecting&hellip;</div>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div class="page">
+
+      <!-- ================= ACCOUNTS / OVERVIEW ================= -->
+      <section class="tabpanel" id="panel-accounts" role="tabpanel" aria-labelledby="tab-accounts">
+
+        <section id="gate" class="panel gate" hidden>
+          <div class="panel-head"><h2>Unlock the dashboard</h2></div>
+          <div class="hint">Paste the local API key from <code>~/.warm2api/api-key</code>, or open
+            <code>http://host:port/?key=...</code> once &mdash; that sets a cookie and this gate stops asking.</div>
+          <form class="field" id="gateform">
+            <input id="keyinput" type="password" autocomplete="off" placeholder="api key" aria-label="API key">
+            <div class="hint"><button class="primary" id="savekey" type="submit" style="width:100%;margin-top:10px;min-height:44px">Unlock</button></div>
+          </form>
+        </section>
+
+        <section class="hero" id="hero" hidden aria-label="Pool totals">
+          <div class="hero-top">
+            <span class="hero-label" id="heroLabel">Credits remaining &middot; binding window</span>
+            <span class="hero-id"><span id="acctHandle">&ndash;</span><span class="sep">&middot;</span><span id="acctTier">&ndash;</span></span>
+          </div>
+          <div class="hero-num"><span id="creditsLeft">&ndash;</span><span class="unit" id="heroUnit">USD left</span></div>
+          <div class="track" id="creditsTrack"><div id="creditsBar"></div></div>
+          <div class="hero-meta">
+            <span id="creditsOf">of &ndash;</span>
+            <span class="right">
+              <span>resets in <b id="acctReset">&ndash;</b></span>
+              <span class="pct" id="creditsPct">&ndash;</span>
+            </span>
+          </div>
+          <div class="statrow">
+            <div class="item"><span class="k">accounts</span><span class="v mono" id="statAccounts">&ndash;</span></div>
+            <div class="item"><span class="k">active</span><span class="v mono" id="statActive">&ndash;</span></div>
+            <div class="item"><span class="k">requests 24h</span><span class="v mono" id="statReqs">&ndash;</span></div>
+            <div class="item"><span class="k">tokens 24h</span><span class="v mono" id="statToks">&ndash;</span></div>
+            <div class="item"><span class="k">cache 24h</span><span class="v mono" id="statCache">&ndash;</span></div>
+            <div class="item"><span class="k">failures</span><span class="v mono" id="statFail">&ndash;</span></div>
+            <div class="item"><span class="k">uptime</span><span class="v mono" id="statUptime">&ndash;</span></div>
+            <div class="item"><span class="k">models</span><span class="v mono" id="statModels">&ndash;</span></div>
+          </div>
+        </section>
+
+        <div class="grid-charts" id="charts" hidden>
+          <section class="panel" aria-label="Requests last 24 hours">
+            <div class="panel-head"><h2>Traffic &middot; last 24 hours</h2><span class="hint" id="burnSum"></span></div>
+            <svg class="chart" id="burnChart" viewBox="0 0 1000 120" preserveAspectRatio="none" role="img"
+              aria-label="Requests and tokens per hour"></svg>
+            <div class="chart-legend">
+              <span><i style="background:var(--accent)"></i>requests</span>
+              <span><i style="background:#2a2a32"></i>failures</span>
+            </div>
+          </section>
+          <section class="panel" aria-label="Tokens last 24 hours">
+            <div class="panel-head"><h2>Tokens &middot; last 24 hours</h2><span class="hint" id="tokSum"></span></div>
+            <svg class="chart" id="tokChart" viewBox="0 0 1000 120" preserveAspectRatio="none" role="img"
+              aria-label="Input, output and cached tokens per hour"></svg>
+            <div class="chart-legend">
+              <span><i style="background:var(--accent)"></i>input</span>
+              <span><i style="background:#4ade80"></i>output</span>
+              <span><i style="background:#2a2a32"></i>cached</span>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel" id="addcard" hidden>
+          <div class="panel-head">
+            <h2>Add a Warm account</h2>
+            <span class="hint" id="addsub">Approve the code in your browser</span>
+          </div>
+          <div class="hint" id="addhint">The proxy runs the device flow itself and adds the account when you approve.</div>
+          <div class="loginbox" id="loginbox" hidden>
+            <div class="codebox" id="code">------</div>
+            <div class="linkrow">
+              <a id="verifylink" href="#" target="_blank" rel="noreferrer">open approval page</a>
+              <button id="copylink">Copy code</button>
+            </div>
+            <div class="hint" id="loginhint">Waiting for approval&hellip;</div>
+          </div>
+        </section>
+
+        <section id="accounts" style="margin-top:14px"></section>
+
+        <section class="panel empty" id="empty" hidden>
+          <b>No accounts yet</b>
+          Add one to start routing. The proxy keeps each token, tracks its quota and rotates on failure.
+        </section>
+      </section>
+
+      <!-- ================= ACTIVITY ================= -->
+      <section class="tabpanel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" hidden>
+        <section class="panel" aria-label="Spend by model">
+          <div class="panel-head"><h2>Spend by model &middot; 24h</h2><span class="hint" id="modelSpendHint"></span></div>
+          <div id="modelSpend"></div>
+        </section>
+        <section class="panel" aria-label="Recent requests">
+          <div class="panel-head"><h2>Recent requests</h2><span class="hint" id="recentHint"></span></div>
+          <div class="tablewrap">
+            <table id="recentTable">
+              <thead>
+                <tr><th>when</th><th>model</th><th class="num">in</th><th class="num">out</th>
+                  <th class="num">cached</th><th class="num">ms</th><th>status</th></tr>
+              </thead>
+              <tbody id="recentBody"></tbody>
+            </table>
+          </div>
+          <div class="empty" id="recentEmpty" hidden>No requests logged in the last 24 hours.</div>
+        </section>
+      </section>
+
+      <!-- ================= MODELS ================= -->
+      <section class="tabpanel" id="panel-models" role="tabpanel" aria-labelledby="tab-models" hidden>
+        <section class="panel" aria-label="Model catalog">
+          <div class="panel-head">
+            <h2>Model catalog</h2>
+            <span class="hint" id="modelsub">live from the gateway</span>
+            <button id="modelsrefresh" style="margin-left:auto">Reload</button>
+          </div>
+          <div id="models"></div>
+        </section>
+      </section>
+
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const KEYSTORE = "warm2api.key";
+  let key = localStorage.getItem(KEYSTORE) || "";
+  let unlocked = false;
+  let timer = null;
+  let busy = false;
+  let updatedAt = 0;
+  let lastAccounts = [];
+  let lastPool = null;
+  let modelsLoaded = false;
+  let statsLoaded = false;
+
+  const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const usd = (v) => (v === null || v === undefined) ? "&ndash;" : "$" + Number(v).toFixed(4);
+  const num = (n) => (n === null || n === undefined) ? "&ndash;" : Number(n).toLocaleString("en-US");
+  const short = (n) => {
+    if (n === null || n === undefined) return "&ndash;";
+    const v = Number(n);
+    if (v >= 1e9) return (v / 1e9).toFixed(1).replace(/\.0$/, "") + "B";
+    if (v >= 1e6) return (v / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+    if (v >= 1000) return Math.round(v / 1000) + "k";
+    return String(Math.round(v));
+  };
+  const when = (ms) => {
+    if (!ms) return "&ndash;";
+    const diff = ms - Date.now();
+    if (diff <= 0) return "now";
+    const mins = Math.round(diff / 60000);
+    if (mins < 60) return mins + "m";
+    const hours = Math.floor(mins / 60), rest = mins % 60;
+    if (hours < 48) return hours + "h" + (rest ? " " + rest + "m" : "");
+    return Math.round(hours / 24) + "d";
+  };
+  const ago = (t) => {
+    const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+    if (s < 5) return "live";
+    if (s < 60) return s + "s ago";
+    if (s < 3600) return Math.round(s / 60) + "m ago";
+    return Math.round(s / 3600) + "h ago";
+  };
+  const dur = (s) => {
+    if (s < 60) return s + "s";
+    if (s < 3600) return Math.floor(s / 60) + "m";
+    if (s < 86400) return Math.floor(s / 3600) + "h " + (Math.floor(s / 60) % 60) + "m";
+    return Math.floor(s / 86400) + "d " + (Math.floor(s / 3600) % 24) + "h";
+  };
+
+  const toast = (msg) => {
+    const el = $("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toast.t);
+    toast.t = setTimeout(() => el.classList.remove("show"), 2400);
+  };
+
+  async function api(path, options = {}) {
+    const headers = Object.assign({}, options.headers || {});
+    if (key) headers["x-api-key"] = key;
+    if (options.body) headers["content-type"] = "application/json";
+    const res = await fetch(path, Object.assign({}, options, { headers }));
+    if (res.status === 401) { setUnlocked(false); throw new Error("unauthorised"); }
+    const text = await res.text();
+    let body = null;
+    try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+    if (!res.ok) throw new Error((body && body.error && body.error.message) || ("HTTP " + res.status));
+    return body;
+  }
+
+  let addOpen = false;
+
+  function setUnlocked(on) {
+    unlocked = on;
+    $("gate").hidden = on;
+    $("callout").hidden = on || !updatedAt;
+    // The add panel is opt-in: unlocking must not push a device-code form onto
+    // someone who only wanted to read quota.
+    $("addcard").hidden = !on || !addOpen;
+    $("hero").hidden = !on || lastAccounts.length === 0;
+    $("charts").hidden = !on || lastAccounts.length === 0;
+    $("empty").hidden = !on || lastAccounts.length > 0;
+    if (!on) {
+      $("accounts").replaceChildren();
+      $("statusTxt").textContent = "locked";
+      $("status").className = "status warn";
+      $("updatedTxt").textContent = "&ndash;";
+    }
+  }
+
+  function setStatus(cls, text) {
+    $("status").className = "status " + cls;
+    $("statusTxt").textContent = text;
+  }
+
+  function pill(state) {
+    return '<span class="pill ' + esc(state) + '">' + esc(String(state).replace(/_/g, " ")) + "</span>";
+  }
+
+  function accountCard(account) {
+    const remaining = account.remaining_usd;
+    const limit = account.limit_usd;
+    const ratio = (remaining !== null && limit) ? Math.max(0, Math.min(1, remaining / limit)) : 0;
+    const level = remaining === null ? "" : ratio <= 0 ? " empty" : ratio < 0.25 ? " low" : "";
+    const cached = account.cache_read_tokens > 0
+      ? '<span>' + short(account.cache_read_tokens) + " cached</span>" : "";
+    const tokens = (account.input_tokens || 0) + (account.output_tokens || 0);
+    const reset = when(account.resets_at ? Date.parse(account.resets_at) : account.state_until);
+    return '' +
+      '<article class="acct" data-id="' + esc(account.id) + '">' +
+        '<div class="acct-top">' +
+          '<div class="grow">' +
+            '<div class="acct-name">' + esc(account.label || account.id) + '</div>' +
+            '<div class="acct-sub">' + esc(account.plan || "unknown plan") + " &middot; " + esc(account.id) + '</div>' +
+          '</div>' + pill(account.state) +
+        '</div>' +
+        '<div class="track' + level + '"><div style="width:' + (remaining === null ? 0 : Math.round(ratio * 100)) + '%"></div></div>' +
+        '<div class="acct-meta">' +
+          '<span>remaining ' + usd(remaining) + (limit ? " of " + usd(limit) : "") + '</span>' +
+          '<span>resets in ' + reset + '</span>' +
+        '</div>' +
+        (account.lifetime_limit_usd !== null && account.lifetime_limit_usd !== undefined
+          ? '<div class="acct-meta" style="margin-top:6px">' +
+              '<span>one-time credits ' + usd(account.lifetime_remaining_usd) +
+              " of " + usd(account.lifetime_limit_usd) + '</span>' +
+              '<span>' + (account.binding === "lifetime" ? "binding" : "not binding") + '</span>' +
+            '</div>'
+          : "") +
+        '<div class="acct-stats">' +
+          '<span>' + num(account.requests) + " requests</span>" +
+          '<span>' + short(tokens) + " tokens</span>" + cached +
+          '<span>spent ' + usd(account.credits_spent_usd) + '</span>' +
+          (account.excluded_models && account.excluded_models.length
+            ? '<span>' + num(account.excluded_models.length) + " excluded</span>" : "") +
+        '</div>' +
+        '<div class="acct-actions">' +
+          (account.state !== "active" ? '<button data-act="revive">Revive</button>' : "") +
+          '<button data-act="remove" class="danger">Remove</button>' +
+        '</div>' +
+      '</article>';
+  }
+
+  function renderAccounts(list, pool) {
+    lastAccounts = list;
+    lastPool = pool || null;
+    setUnlocked(true);
+    const host = $("accounts");
+    host.innerHTML = list.map(accountCard).join("");
+    $("empty").hidden = list.length > 0;
+    $("hero").hidden = list.length === 0;
+    $("charts").hidden = list.length === 0;
+
+    host.querySelectorAll(".acct").forEach((article) => {
+      const id = article.getAttribute("data-id");
+      const account = list.find((a) => a.id === id);
+      if (!account) return;
+      const revive = article.querySelector('[data-act="revive"]');
+      if (revive) revive.onclick = async () => {
+        revive.disabled = true;
+        try {
+          await api("/admin/accounts/" + encodeURIComponent(id) + "/revive", { method: "POST" });
+          toast("revived"); await load();
+        } catch (err) { toast(err.message); revive.disabled = false; }
+      };
+      const remove = article.querySelector('[data-act="remove"]');
+      remove.onclick = async () => {
+        if (!confirm("Remove " + (account.label || account.id) + " and delete its token?")) return;
+        remove.disabled = true;
+        try {
+          await api("/admin/accounts/" + encodeURIComponent(id), { method: "DELETE" });
+          toast("removed"); await load();
+        } catch (err) { toast(err.message); remove.disabled = false; }
+      };
+    });
+
+    renderHero(list, lastPool);
+  }
+
+  function renderHero(list, pool) {
+    const active = list.filter((a) => a.state === "active");
+    const withQuota = list.filter((a) => a.remaining_usd !== null && a.limit_usd);
+    // Pool view: the hero reports the whole pool, the same figure `/api/state`
+    // and `warm-quota` print, so no two surfaces disagree. It falls back to the
+    // tightest single account when the state document has no pool yet, and to
+    // spend when nothing has been measured.
+    if (pool && pool.limit_usd !== null && pool.remaining_usd !== null) {
+      const ratio = pool.limit_usd > 0 ? pool.remaining_usd / pool.limit_usd : 0;
+      $("heroLabel").textContent = pool.binding_label
+        ? "Pool remaining \u00b7 " + pool.binding_label
+        : "Pool remaining";
+      $("heroUnit").textContent = "USD left";
+      $("creditsLeft").textContent = "$" + Number(pool.remaining_usd).toFixed(4);
+      $("creditsOf").innerHTML = "of " + usd(pool.limit_usd) + " across " + pool.accounts +
+        (pool.accounts === 1 ? " account" : " accounts");
+      $("creditsPct").textContent = Math.round(ratio * 100) + "%";
+      $("creditsBar").style.width = (ratio * 100).toFixed(1) + "%";
+      $("creditsTrack").className = "track" + (ratio <= 0 ? " empty" : ratio < 0.25 ? " low" : "");
+      $("acctHandle").textContent = list.length + (list.length === 1 ? " account" : " accounts");
+      $("acctTier").textContent = pool.binding === "lifetime" ? "one-time credits" : "rolling windows";
+      const reset = pool.resets_at ? Date.parse(pool.resets_at) : null;
+      $("acctReset").textContent = reset ? when(reset) : "\u2013";
+      $("statAccounts").textContent = num(list.length);
+      $("statActive").textContent = num(active.length);
+      return;
+    }
+
+    let tightest = null;
+    for (const account of withQuota) {
+      const ratio = account.remaining_usd / account.limit_usd;
+      if (!tightest || ratio < tightest.ratio) {
+        tightest = { ratio, account };
+      }
+    }
+    // Without a quota snapshot the hero falls back to spend, which is always
+    // known once traffic exists, rather than showing a wall of dashes.
+    if (!tightest) {
+      const spent = list.reduce((sum, a) => sum + (a.credits_spent_usd || 0), 0);
+      const cap = list.reduce((sum, a) => sum + (a.limit_usd || 0), 0);
+      $("heroLabel").textContent = "Spent by this proxy \u00b7 no quota snapshot yet";
+      $("heroUnit").textContent = "spent so far";
+      $("creditsLeft").textContent = "$" + spent.toFixed(4);
+      $("creditsOf").innerHTML = "refresh quotas to read the remaining balance";
+      $("creditsPct").textContent = cap ? Math.round((spent / cap) * 100) + "%" : "\u2013";
+      $("creditsBar").style.width = cap ? Math.min(100, (spent / cap) * 100).toFixed(1) + "%" : "0%";
+      $("creditsTrack").className = "track";
+      $("acctHandle").textContent = list.length + (list.length === 1 ? " account" : " accounts");
+      $("acctTier").textContent = list.map((a) => a.state).filter((v, i, all) => all.indexOf(v) === i).join(" \u00b7 ");
+      $("acctReset").textContent = "\u2013";
+      $("statAccounts").textContent = num(list.length);
+      $("statActive").textContent = num(active.length);
+      return;
+    }
+
+    const remaining = tightest.account.remaining_usd;
+    const limit = tightest.account.limit_usd;
+    const ratio = tightest.ratio;
+    const label = tightest.account.binding_label;
+    $("heroLabel").textContent = label
+      ? "Credits remaining \u00b7 " + label
+      : "Credits remaining \u00b7 binding budget";
+    $("heroUnit").textContent = "USD left";
+    $("creditsLeft").textContent = "$" + Number(remaining).toFixed(4);
+    $("creditsOf").innerHTML = "of " + usd(limit) + (tightest.account.binding === "lifetime"
+      ? " in one-time credits"
+      : " in the tightest window");
+    $("creditsPct").textContent = Math.round(ratio * 100) + "%";
+    $("creditsBar").style.width = (ratio * 100).toFixed(1) + "%";
+    $("creditsTrack").className = "track" + (ratio <= 0 ? " empty" : ratio < 0.25 ? " low" : "");
+    $("acctHandle").textContent = tightest.account.label || tightest.account.id;
+    $("acctTier").textContent = list.length + (list.length === 1 ? " account" : " accounts");
+    const reset = tightest.account.resets_at ? Date.parse(tightest.account.resets_at) : null;
+    $("acctReset").textContent = reset ? when(reset) : "\u2013";
+    $("statAccounts").textContent = num(list.length);
+    $("statActive").textContent = num(active.length);
+  }
+
+  function bars(el, buckets, pick, colors, max) {
+    const W = 1000, H = 120, CH = H - 22;
+    const peak = Math.max(max, ...buckets.map((b) => pick(b)[0]), 1);
+    const bw = W / buckets.length;
+    let svg = '<line x1="0" y1="' + CH + '" x2="' + W + '" y2="' + CH + '" stroke="#232329" stroke-width="1"/>';
+    buckets.forEach((bucket, i) => {
+      const values = pick(bucket);
+      const x = i * bw;
+      const series = values.length;
+      const gap = 2;
+      const width = Math.max(1.5, (bw - gap * (series + 1)) / series);
+      values.forEach((value, s) => {
+        const h = Math.max(0, Math.round((value / peak) * (CH - 4)));
+        const left = x + gap + s * (width + gap);
+        svg += '<rect x="' + left.toFixed(1) + '" y="' + (CH - h).toFixed(1) +
+          '" width="' + width.toFixed(1) + '" height="' + Math.max(h, value > 0 ? 1.5 : 0).toFixed(1) +
+          '" rx="2" fill="' + colors[s] + '"></rect>';
+      });
+    });
+    el.innerHTML = svg;
+  }
+
+  function renderStats(stats) {
+    statsLoaded = true;
+    const today = stats.today || {};
+    $("statReqs").textContent = num(today.requests);
+    $("statToks").textContent = short((today.input_tokens || 0) + (today.output_tokens || 0));
+    $("statCache").textContent = short(today.cache_read_tokens || 0);
+    $("statFail").textContent = num(today.failures);
+    $("statUptime").textContent = dur(stats.uptime_s || 0);
+
+    const buckets = stats.series || [];
+    const totalReqs = buckets.reduce((a, b) => a + b.requests, 0);
+    const totalTok = buckets.reduce((a, b) => a + b.input_tokens + b.output_tokens, 0);
+    $("burnSum").textContent = totalReqs + " requests in 24h";
+    $("tokSum").textContent = short(totalTok) + " tokens in 24h";
+    if (buckets.length) {
+      bars($("burnChart"), buckets,
+        (b) => [b.requests, b.failures], ["var(--accent)", "#f87171"],
+        Math.max(1, ...buckets.map((b) => b.requests)));
+      bars($("tokChart"), buckets,
+        (b) => [b.input_tokens, b.output_tokens, b.cache_read_tokens],
+        ["var(--accent)", "#4ade80", "#2a2a32"],
+        Math.max(1, ...buckets.map((b) => Math.max(b.input_tokens, b.output_tokens, b.cache_read_tokens))));
+    }
+
+    const byModel = stats.by_model || [];
+    const peak = Math.max(1, ...byModel.map((m) => m.requests));
+    $("modelSpend").innerHTML = byModel.length === 0
+      ? '<div class="empty">No model traffic yet.</div>'
+      : byModel.map((m) => '' +
+          '<div class="mrow">' +
+            '<span class="name" title="' + esc(m.model) + '">' + esc(m.model) + '</span>' +
+            '<span class="bar"><div style="width:' + Math.round((m.requests / peak) * 100) + '%"></div></span>' +
+            '<span class="val">' + num(m.requests) + '</span>' +
+          '</div>').join("");
+    $("modelSpendHint").textContent = byModel.length + " models";
+
+    const rows = stats.recent || [];
+    $("recentBody").innerHTML = rows.map((r) => '' +
+      '<tr>' +
+        '<td class="muted">' + ago(r.at) + '</td>' +
+        '<td class="mono" style="font-size:12px">' + esc(r.model) + '</td>' +
+        '<td class="num">' + short(r.input_tokens) + '</td>' +
+        '<td class="num">' + short(r.output_tokens) + '</td>' +
+        '<td class="num">' + short(r.cache_read_tokens) + '</td>' +
+        '<td class="num">' + num(r.ms) + '</td>' +
+        '<td><span class="badge ' + (r.status < 400 ? "ok" : "bad") + '">' + r.status + '</span></td>' +
+      '</tr>').join("");
+    $("recentEmpty").hidden = rows.length > 0;
+    $("recentTable").hidden = rows.length === 0;
+    $("recentHint").textContent = rows.length + " shown";
+  }
+
+  async function loadStats() {
+    try {
+      renderStats(await api("/admin/stats"));
+    } catch (err) {
+      if (err.message !== "unauthorised") toast(err.message);
+    }
+  }
+
+  async function load() {
+    let data;
+    let state = null;
+    try {
+      // One document carries both: account rows for the cards and the pool
+      // totals the hero reports. Two calls could paint a mismatched pair.
+      state = await api("/api/state");
+      data = { accounts: (state.accounts && state.accounts.list) || [] };
+    } catch (err) {
+      if (err.message !== "unauthorised") toast(err.message);
+      return;
+    }
+    renderAccounts(data.accounts, state && state.pool);
+    updatedAt = Date.now();
+    $("updatedTxt").textContent = "live";
+    const anyActive = lastAccounts.some((a) => a.state === "active");
+    const anyError = lastAccounts.some((a) => a.state === "error" || a.state === "disabled");
+    setStatus(anyActive ? "ok" : anyError ? "bad" : "warn",
+      anyActive ? "pool healthy" : anyError ? "attention needed" : "no active account");
+    if (anyActive) setStatus("ok", "pool healthy");
+    await loadStats();
+    // The hero shows a model count; fetch it once so the first paint is complete
+    // instead of waiting for someone to open the Models tab.
+    if (!modelsLoaded) await loadModels();
+  }
+
+  async function tick() {
+    if (document.hidden) return;
+    if (updatedAt) $("updatedTxt").textContent = ago(updatedAt);
+    if (!busy) await load();
+  }
+
+  function selectTab(name) {
+    for (const button of document.querySelectorAll(".tab")) {
+      const on = button.dataset.tab === name;
+      button.setAttribute("aria-selected", String(on));
+      button.tabIndex = on ? 0 : -1;
+      button.classList.toggle("active", on);
+    }
+    $("panel-accounts").hidden = name !== "accounts";
+    $("panel-activity").hidden = name !== "activity";
+    $("panel-models").hidden = name !== "models";
+    if (name === "models" && !modelsLoaded) loadModels();
+    if (name === "activity") loadStats();
+  }
+  for (const button of document.querySelectorAll(".tab")) {
+    button.onclick = () => selectTab(button.dataset.tab);
+    button.onkeydown = (event) => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      const tabs = Array.from(document.querySelectorAll(".tab"));
+      const index = tabs.indexOf(button);
+      const next = tabs[(index + (event.key === "ArrowDown" ? 1 : tabs.length - 1)) % tabs.length];
+      next.focus();
+      selectTab(next.dataset.tab);
+    };
+  }
+
+  async function loadModels() {
+    $("modelsrefresh").disabled = true;
+    try {
+      $("modelsub").textContent = "loading\u2026";
+      const data = await api("/admin/models");
+      const list = data.models || [];
+      $("models").innerHTML = list.map((model) => {
+        const caps = [model.tools ? "tools" : null, model.vision ? "vision" : null,
+          model.thinking ? "reasoning" : null].filter(Boolean);
+        const price = model.input_per_m === null
+          ? "price unknown"
+          : "$" + model.input_per_m + " in / $" + model.output_per_m + " out per 1M";
+        return '' +
+          '<div class="modelrow">' +
+            '<div>' +
+              // Only print the id once: gateways often return the id as the name.
+              '<div class="name">' + esc(model.name === model.id ? model.id : model.name) + '</div>' +
+              (model.name === model.id ? "" : '<div class="idline">' + esc(model.id) + '</div>') +
+              (caps.length ? '<div class="caps">' + caps.map((c) => '<span class="cap">' + c + "</span>").join("") + '</div>' : "") +
+            '</div>' +
+            '<div class="meta">' +
+              '<div>' + short(model.context) + ' ctx' + (model.max_output ? " &middot; " + short(model.max_output) + " out" : "") + '</div>' +
+              '<div class="faint" style="font-size:11.5px">' + price + '</div>' +
+            '</div>' +
+          '</div>';
+      }).join("");
+      $("modelsub").textContent = list.length + " models";
+      $("statModels").textContent = num(list.length);
+      modelsLoaded = true;
+    } catch (err) {
+      $("modelsub").textContent = err.message;
+    } finally {
+      $("modelsrefresh").disabled = false;
+    }
+  }
+  $("modelsrefresh").onclick = loadModels;
+
+  $("gateform").onsubmit = (event) => {
+    event.preventDefault();
+    const value = $("keyinput").value.trim();
+    if (!value) return;
+    key = value;
+    localStorage.setItem(KEYSTORE, value);
+    setUnlocked(true);
+    load().then(() => { if (unlocked) toast("unlocked"); });
+  };
+
+  $("addBtn").onclick = () => {
+    if (!unlocked) { $("keyinput").focus(); return; }
+    selectTab("accounts");
+    addOpen = true;
+    $("addcard").hidden = false;
+    $("addcard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    startLogin();
+  };
+
+  let loginRunning = false;
+  async function startLogin() {
+    if (loginRunning) return;
+    loginRunning = true;
+    $("addBtn").disabled = true;
+    $("loginbox").hidden = false;
+    $("loginhint").textContent = "Requesting a device code\u2026";
+    try {
+      const login = await api("/admin/login", { method: "POST" });
+      const id = login.id;
+      const render = (view) => {
+        if (view.user_code) $("code").textContent = view.user_code;
+        if (view.verification_uri_complete || view.verification_uri) {
+          const url = view.verification_uri_complete || view.verification_uri;
+          $("verifylink").href = url;
+          $("verifylink").textContent = "Approve at " + url.replace(/^https?:\/\//, "");
+        }
+        if (view.status === "pending") {
+          $("loginhint").textContent = "Waiting for approval\u2026 (" + (view.expires_in || 600) + "s)";
+        }
+      };
+      render(login);
+      const deadline = Date.now() + 11 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const view = await api("/admin/login/" + encodeURIComponent(id));
+        render(view);
+        if (view.status === "complete") {
+          $("loginhint").textContent = "Added " + (view.label || view.account_id);
+          toast("account added");
+          $("loginbox").hidden = true;
+          addOpen = false;
+          $("addcard").hidden = true;
+          break;
+        }
+        if (view.status === "error") {
+          $("loginhint").textContent = view.message || "login failed";
+          toast(view.message || "login failed");
+          break;
+        }
+      }
+      await load();
+    } catch (err) {
+      $("loginhint").textContent = err.message;
+      toast(err.message);
+    } finally {
+      $("addBtn").disabled = false;
+      loginRunning = false;
+    }
+  }
+
+  $("copylink").onclick = async () => {
+    const text = $("code").textContent;
+    try { await navigator.clipboard.writeText(text); toast("code copied"); }
+    catch { toast("copy failed \u2014 select the code manually"); }
+  };
+
+  $("refreshBtn").onclick = async () => {
+    if (!unlocked) { $("keyinput").focus(); return; }
+    busy = true;
+    $("refreshBtn").disabled = true;
+    $("refreshBtn").textContent = "Refreshing\u2026";
+    try {
+      const result = await api("/admin/poll", { method: "POST" });
+      const failed = (result.results || []).filter((r) => !r.ok).length;
+      toast(failed ? "refreshed; " + failed + " failed" : "quotas refreshed");
+      await load();
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      busy = false;
+      $("refreshBtn").disabled = false;
+      $("refreshBtn").textContent = "Refresh";
+    }
+  };
+
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+  setUnlocked(false);
+  // Attempt the list even without a stored key: the ?key= shortcut sets an
+  // HttpOnly cookie that authenticates fetch() without exposing the key to JS.
+  load();
+  timer = setInterval(tick, 5000);
+})();
+</script>
+</body>
+</html>

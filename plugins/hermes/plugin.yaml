@@ -1,0 +1,12 @@
+name: warm
+version: 0.1.0
+manifest_version: 2
+requires_hermes: ">=0.21.7"
+description: "Local warm2api proxy as a Hermes model provider; ships the proxy bundle and starts it on demand."
+author: warm2api
+license: MIT
+tags: [model-provider, warm, local, openai-compatible]
+kind: model-provider
+platforms:
+  - linux
+  - macos
