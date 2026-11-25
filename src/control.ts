@@ -159,6 +159,10 @@ export function accountCounts(): Record<string, number> {
 export function apiState(models: readonly string[]): Record<string, unknown> {
   const cfg = getConfig();
   const totals = lifetime();
+  // Anthropic reports `input_tokens` as the *uncached* reminder of the prompt;
+  // the parts served from cache are separate. So the prompt total — what OpenAI
+  // calls `prompt_tokens`, and what a reader means by "tokens in" — is the sum.
+  const promptTokens = totals.input_tokens + totals.cache_read_tokens;
   return {
     ok: true,
     version: APP_VERSION,
@@ -170,15 +174,14 @@ export function apiState(models: readonly string[]): Record<string, unknown> {
     requests: {
       total: totals.requests,
       errors: totals.failures,
-      tokens_in: totals.input_tokens,
+      tokens_in: promptTokens,
       tokens_out: totals.output_tokens,
       tokens_cached: totals.cache_read_tokens,
       // No tokens measured yet is "unknown", not "0% cached": the same rule the
       // pool figures follow, so a reader cannot mistake an idle proxy for a
-      // proxy whose cache never hits.
-      cache_hit_pct: totals.input_tokens
-        ? round((totals.cache_read_tokens / totals.input_tokens) * 100, 1)
-        : null,
+      // proxy whose cache never hits. The denominator is the full prompt, or a
+      // heavily cached workload reports more than 100% (`74240/58497` = 127%).
+      cache_hit_pct: promptTokens > 0 ? round((totals.cache_read_tokens / promptTokens) * 100, 1) : null,
       buckets: series(24, 24),
     },
     models: [...models],

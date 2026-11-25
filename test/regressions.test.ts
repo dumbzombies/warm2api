@@ -474,3 +474,45 @@ describe("an unguarded proxy is not a cross-origin relay", () => {
     }
   }, 30_000);
 });
+
+describe("cache hit rate is a real percentage", () => {
+  // Anthropic reports `input_tokens` as the uncached reminder of the prompt;
+  // cache reads arrive separately. Dividing cached by uncached made a heavily
+  // cached workload report 126.9% on the live proxy, and understated
+  // `tokens_in` (it excluded the cached part of every prompt).
+  test("a fully cached prompt reports 100%, not more", async () => {
+    const local = await boot({ accounts: 1 });
+    try {
+      const { recordRequest } = await import("../src/track.ts");
+      // 1000 uncached + 9000 cached prompt tokens, 50 out.
+      recordRequest({
+        accountId: null,
+        surface: "openai",
+        model: "m",
+        status: 200,
+        inputTokens: 1000,
+        outputTokens: 50,
+        cacheReadTokens: 9000,
+        ms: 5,
+      });
+      const res = await fetch(`${local.server.url}/api/state`, {
+        headers: { authorization: `Bearer ${local.config.apiKey}` },
+      });
+      const state = (await res.json()) as {
+        requests: { tokens_in: number; tokens_cached: number; cache_hit_pct: number | null };
+      };
+      expect(state.requests.tokens_in).toBe(10_000);
+      expect(state.requests.cache_hit_pct).toBe(90);
+
+      // Fully cached: 100%, never 127%.
+      const { recordRequest: record } = await import("../src/track.ts");
+      record({ accountId: null, surface: "openai", model: "m", status: 200, inputTokens: 0, outputTokens: 1, cacheReadTokens: 500, ms: 5 });
+      const after = (await (await fetch(`${local.server.url}/api/state`, {
+        headers: { authorization: `Bearer ${local.config.apiKey}` },
+      })).json()) as { requests: { cache_hit_pct: number | null } };
+      expect(after.requests.cache_hit_pct).toBeLessThanOrEqual(100);
+    } finally {
+      await local.close();
+    }
+  });
+});

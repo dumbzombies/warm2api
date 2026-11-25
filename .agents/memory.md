@@ -668,3 +668,49 @@ Lesson: "credentials are header-based, so CORS is safe" is only true if the
 credential is mandatory. Check the *default* configuration, not the guarded one —
 the test harness forces `WARM2API_API_AUTH=on`, which is exactly why the suite
 never saw this.
+
+## 2026-11-25 — pi-bolt integration testing (real agentic loops)
+
+Installed the omp plugin into pi-bolt at `~/.pi/agent/extensions/warm2api/`
+(`index.ts` + `dist/warm2api.mjs` + a `pi.extensions` manifest) and drove real
+agent sessions through it.
+
+**Two defects found, both invisible to the unit tests.**
+
+1. **The provider never appeared.** `pi --list-models` showed freepi, mimo2api
+   and web2api but no `warm`. The factory ran (proven with console.log), the
+   model payload was correct (8 models), and `registerProvider` returned without
+   throwing — yet nothing was listed. Bisecting against probes isolated it: a
+   provider with an `oauth` block and **no `apiKey`** is treated as "not yet
+   authenticated" and omitted from `--list-models`/the picker, silently. The
+   plugin set `oauth` but no `apiKey`, so it looked installed-but-broken and
+   `/warm add` was unreachable because its models never showed. Fix:
+   `apiKey: apiKey() || "local"`. Errors thrown *inside* an oauth login never
+   surfaced either, which is why the symptom was a silent absence.
+2. **`cache_hit_pct` could exceed 100%.** Live read `126.9%`. Upstream reports
+   `input_tokens` as the *uncached* remainder of the prompt and cache reads
+   separately, so cached/uncached is not a ratio; the denominator must be
+   `input + cache_read`. Fixed in `apiState`; `tokens_in` now also means the full
+   prompt (matching OpenAI's `prompt_tokens`), and live reads 74.1%.
+
+**What worked.** Two agentic loops through `--provider warm`:
+- run a failing check, edit `calc.py` (`a - b` → `a + b`), re-run, verify — 5 turns;
+- run a script, compute 2 users / average 40.5 from real output, write
+  `summary.txt` — 6 turns, math verified independently.
+
+Prompt caching is visibly working in the logs: turns 2-6 reuse 15.8-16.4K cached
+tokens with only ~200-300 new input tokens each. That is the sticky-routing
+policy paying off, and it is only observable from real sessions.
+
+**Not a bug, checked:** `/warm accounts` prints the account label, which is the
+user's own email for their own account, to an authenticated local caller
+(`gh auth status` does the same). Also: slash commands do not run in `-p` mode —
+driving the handlers directly with a mock host is the way to test them.
+
+**Method note.** pi-bolt's silent-dropping made bisection essential: probes that
+each registered one variant (`no apiKey`, `oauth only`, `null maxTokens`,
+`undefined name`, provider/command name collision, `await` before register) —
+`maxTokens: null` in *any* model also drops the whole provider, which is worth
+knowing if the catalog ever yields nulls. Debug `console.log` in the installed
+copy plus `-e <file>` were what distinguished "not loaded" from "loaded but
+suppressed".

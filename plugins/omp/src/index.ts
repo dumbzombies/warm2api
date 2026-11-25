@@ -336,6 +336,13 @@ export default async function warm2apiPlugin(pi: PiApi): Promise<void> {
   pi.registerProvider("warm", {
     name: "Warm",
     baseUrl: `${BASE}/v1`,
+    // A provider that declares `oauth` but no `apiKey` is treated as
+    // "not yet authenticated" and Pi omits it from `--list-models` and the
+    // model picker entirely — the plugin then looks installed-but-broken, and
+    // `/warm add` is unreachable because its models never appear. The local
+    // proxy is what authenticates upstream; the key here only satisfies the
+    // host's readiness check, and the oauth flow still runs for `/login`.
+    apiKey: apiKey() || "local",
     api: "openai-completions",
     models: toProviderModels(await catalogModels()),
     oauth: {
