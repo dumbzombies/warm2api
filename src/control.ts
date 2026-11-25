@@ -7,7 +7,7 @@
 // so every figure here is a division of an integer, never accumulated float.
 
 import { latestQuota, listAccounts, type Account } from "./accounts.ts";
-import { CLIENT_VERSION, getConfig } from "./config.ts";
+import { APP_VERSION, getConfig } from "./config.ts";
 import { lifetime, recent, series } from "./track.ts";
 
 const startedAt = Date.now();
@@ -157,7 +157,7 @@ export function apiState(models: readonly string[]): Record<string, unknown> {
   const totals = lifetime();
   return {
     ok: true,
-    version: CLIENT_VERSION,
+    version: APP_VERSION,
     mode: cfg.requireApiKey ? "guarded" : "open",
     dashboard: cfg.dashboardAuth ? "basic" : "open",
     uptime_s: uptimeSeconds(),

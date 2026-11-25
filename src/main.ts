@@ -2,7 +2,7 @@
 // warm2api command line. `serve` is the default so the module can also be used
 // as the plugins' in-process server.
 
-import { getConfig, CLIENT_VERSION } from "./config.ts";
+import { APP_VERSION, getConfig } from "./config.ts";
 import { closeDb, formatMicro, getDb, initDb } from "./db.ts";
 import {
   addAccount,
@@ -184,7 +184,7 @@ async function cmdStart(args: string[]): Promise<void> {
     port,
     host,
     dataDir: config.dataDir,
-    version: CLIENT_VERSION,
+    version: APP_VERSION,
     entry: Bun.argv[1] ?? process.execPath,
   });
   if (reused) {
@@ -460,7 +460,7 @@ async function main(): Promise<void> {
     case "version":
     case "--version":
     case "-v":
-      console.log(CLIENT_VERSION);
+      console.log(APP_VERSION);
       return;
     default:
       console.error(`unknown command: ${command}`);

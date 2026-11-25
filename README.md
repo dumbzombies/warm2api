@@ -9,27 +9,75 @@ Runtime: Bun ≥ 1.1 (uses `Bun.serve`, `bun:sqlite`). No other dependencies.
 
 ## Install
 
+One command, no Node, no package registry, no root. Each installer fetches the
+repo, compiles the proxy into a single self-contained binary and puts `warm2api`
+on PATH.
+
 ```sh
-cd ~/projects/warm2api
+# Termux and Linux (bash)
+curl -fsSL https://raw.githubusercontent.com/dumbzombies/warm2api/main/install.sh | bash
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/dumbzombies/warm2api/main/install.ps1 | iex
+```
+
+Re-running an installer is the upgrade path: it updates the checkout and
+recompiles. Overrides: `WARM2API_HOME` (build dir), `WARM2API_BIN` (PATH
+directory), `WARM2API_REF` (git ref), `WARM2API_REPO`.
+
+From a checkout, without installing:
+
+```sh
 bun install                     # dev deps only (SDK clients for the tests)
 ```
 
-## Add an account
+## Quick start
 
 ```sh
-bun run src/main.ts add         # device flow: prints a URL and a code
-bun run src/main.ts token <bearer> --label work    # paste an existing token
+warm2api add                    # device flow: prints a URL and a code
+warm2api start                  # background service, waits until healthy
+warm2api status                 # pid, URL, dashboard link, account states
 ```
 
 `add` performs the RFC 8628 device approval, looks up the account identity and
-stores the first quota snapshot. Tokens live in `~/.warm2api/state.db`; the
-proxy's own API key is generated on first start into `~/.warm2api/api-key`
-(mode 0600).
+stores the first quota snapshot. `token <bearer> --label work` stores an existing
+token instead. Tokens live in `~/.warm2api/state.db`; the proxy's own API key is
+generated on first start into `~/.warm2api/api-key` (mode 0600).
+
+## CLI
+
+`warm2api` behaves like any other supervised gateway command: start it once,
+then ask it what it is doing.
+
+| Command | Effect |
+| --- | --- |
+| `start [--port N] [--host H] [--open]` | run detached, print the dashboard URL once `/healthz` answers |
+| `stop` | SIGTERM the child, SIGKILL after 5 s |
+| `restart` | `stop` then `start` |
+| `status [--json]` | state (`running`/`stale`/`stopped`), pid, URL, uptime, account states, exit 1 when not healthy |
+| `logs [--lines N]` | tail the service log |
+| `env [--json]` | `export`-ready `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `WARM2API_API_KEY` |
+| `add`, `token`, `list`, `usage`, `poll`, `purge`, `revive`, `doctor` | account and quota upkeep |
+| `serve` | foreground process (what `start` spawns) |
+| `version`, `help` | — |
+
+`start` is idempotent, records what it actually bound, and moves to the next free
+port when the requested one is taken (`port 41673 is busy; using 41674`). A
+`kill -9`'d child reads back as `stale` instead of blocking the next start.
+Lifecycle state lives in `<data dir>/run/` and the child's output in
+`<data dir>/warm2api.log`.
+
+```sh
+eval "$(warm2api env)"          # point any SDK at the running proxy
+```
 
 ## Serve
 
+`warm2api start` is the normal path; `serve` runs in the foreground when you want
+the logs on your terminal.
+
 ```sh
-bun run src/main.ts serve       # or: bun run start
+warm2api serve                  # foreground (bun run serve from a checkout)
 ```
 
 ```
@@ -193,18 +241,18 @@ to start unless both are true:
 
 ```sh
 # refused: no dashboard credentials
-WARM2API_HOST=0.0.0.0 bun run src/main.ts serve
+WARM2API_HOST=0.0.0.0 warm2api serve
 # refusing to bind 0.0.0.0: set WARM2API_DASHBOARD_USER and WARM2API_DASHBOARD_PASS...
 
 # refused: API would be an open relay
 WARM2API_HOST=0.0.0.0 WARM2API_DASHBOARD_USER=ada WARM2API_DASHBOARD_PASS=secret \
-  WARM2API_API_AUTH=off bun run src/main.ts serve
+  WARM2API_API_AUTH=off warm2api serve
 # refusing to bind 0.0.0.0 with API auth disabled: a public proxy without the
 # API key is an open relay.
 
 # correct: both guards on
 WARM2API_HOST=0.0.0.0 WARM2API_DASHBOARD_USER=ada WARM2API_DASHBOARD_PASS=secret \
-  bun run src/main.ts serve
+  warm2api serve
 ```
 
 Basic auth only protects the dashboard; inference still needs the API key.
@@ -227,12 +275,12 @@ The poller re-checks every retired or cooling account and **revives** it as soon
 as its snapshot shows remaining quota again. Only `purge` deletes a credential:
 
 ```sh
-bun run src/main.ts list
-bun run src/main.ts revive <id|all>
-bun run src/main.ts purge <id|all-retired>
-bun run src/main.ts usage [id]      # live quota from upstream
-bun run src/main.ts poll            # one polling pass, prints a table
-bun run src/main.ts doctor          # config, DB, upstream reachability
+warm2api list
+warm2api revive <id|all>
+warm2api purge <id|all-retired>
+warm2api usage [id]          # live quota from upstream
+warm2api poll                # one polling pass, prints a table
+warm2api doctor              # config, DB, upstream reachability
 ```
 
 ## Compatibility notes

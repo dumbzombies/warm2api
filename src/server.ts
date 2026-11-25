@@ -2,7 +2,7 @@
 // local API key, which is compared in constant time.
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { CLIENT_VERSION, getConfig, type Config } from "./config.ts";
+import { APP_VERSION, getConfig, type Config } from "./config.ts";
 import { ApiError } from "./errors.ts";
 import {
   addAccount,
@@ -603,7 +603,7 @@ function healthz(): Response {
   // mode and pool size from one unauthenticated call.
   return json({
     ok: true,
-    version: CLIENT_VERSION,
+    version: APP_VERSION,
     mode: getConfig().requireApiKey ? "guarded" : "open",
     dashboard: getConfig().dashboardAuth ? "basic" : "open",
     accounts: counts,

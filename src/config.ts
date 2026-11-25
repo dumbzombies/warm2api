@@ -6,7 +6,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 
+/**
+ * The version this proxy impersonates on the wire (`x-warm-client`). It must
+ * match the upstream CLI the gateway expects, so it is deliberately not the
+ * package version — bumping it changes how the gateway treats requests.
+ */
 export const CLIENT_VERSION = "0.6.0";
+
+/** This program's own version, served by `/healthz` and `warm2api version`. */
+export const APP_VERSION = "0.7.0";
 
 export type AttestMode = "auto" | "on" | "off";
 

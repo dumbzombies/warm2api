@@ -19,6 +19,7 @@ Bun ≥ 1.1 on Termux/aarch64. No runtime dependencies: `Bun.serve`, `bun:sqlite
 - `src/dispatch.ts` — failure→action table, rotation.
 - `src/server.ts` — HTTP routes, auth, stream recording.
 - `src/control.ts` — `/api/state`, `/api/refresh`, one-api billing views.
+- `src/service.ts` — `start`/`stop`/`status` supervision, pidfile, log tail.
 - `src/translate/*` — OpenAI ↔ Anthropic translation, effort, model table.
 - `src/poller.ts` — quota polling + revival.
 - `src/login.ts`, `src/main.ts` — device flow and CLI.
@@ -30,9 +31,14 @@ Bun ≥ 1.1 on Termux/aarch64. No runtime dependencies: `Bun.serve`, `bun:sqlite
 
 ```sh
 bun test                       # fake upstream + real OpenAI/Anthropic SDKs
-bun run src/main.ts serve
+bun run src/main.ts start|stop|restart|status|logs|env   # service lifecycle
+bun run src/main.ts serve                                # foreground
 bun run src/main.ts add|list|revive <id|all>|purge <id|all-retired>|poll|doctor|usage [id]
 ```
+
+`start` spawns `serve` detached and waits for `/healthz`; the supervisor lives in
+`src/service.ts` and is host-agnostic (Termux, Linux, macOS, Windows). Installers
+(`install.sh`, `install.ps1`) compile `src/main.ts` with `bun build --compile`.
 
 ## Conventions
 
