@@ -93,6 +93,26 @@ Complete and verified. Live service on **http://127.0.0.1:41673**
   0 horizontal overflow, 2 account cards, 160 chart rects, 8 model rows,
   12 activity rows, all three tabs switch panels.
 
+- **Published**: https://github.com/dumbzombies/warm2api (public, `main`, MIT).
+  One-shot installers at the repo root compile a single self-contained binary:
+  `install.sh` (Termux + Linux) and `install.ps1` (Windows). Both put `warm2api`
+  on PATH and re-run as the upgrade path.
+- **CLI (9router-shaped)**: `start [--port N] [--host H] [--open]`, `stop`,
+  `restart`, `status [--json]`, `logs [--lines N]`, `env [--json]`, `serve`,
+  `version`, `help`, plus the account commands. Bare `warm2api` prints help.
+  `src/service.ts` owns supervision: detached spawn, `/healthz` gate (30 s),
+  port fallback, pidfile + `<data>/run/warm2api.json`, SIGTERM then SIGKILL
+  after 5 s, stale-pid detection, bounded log tail. Verified for a source
+  checkout *and* a `bun build --compile` binary.
+- `APP_VERSION` (0.7.0, ours) is split from `CLIENT_VERSION` (0.6.0, the value
+  impersonated in `x-warm-client` and sent upstream); `/healthz`, `/api/state`
+  and `warm2api version` report the former.
+- Tests: `bun test` → **100 pass, 1 skipped, 0 fail across 23 files** (~20 s),
+  including `test/service.test.ts` (real child processes: start/status/env/stop,
+  idempotent start, kill -9 → stale → restart, busy-port fallback).
+- Installer verified from the published URL on this device: clone → compile →
+  `warm2api start` → `status` → `stop`.
+
 ## Blockers
 
 None.
@@ -107,6 +127,7 @@ None.
 - Re-check `WARM2API_UPSTREAM_TIMEOUT_MS` (120 s) against a legitimately slow
   200 k-token prompt.
 - If attestation is ever enabled upstream, re-check `handshake()` (currently 404).
-- Optional: install the plugins into `~/.omp`, `~/.config/opencode`,
-  `~/.hermes` permanently (opencode is installed and verified; omp and hermes are
-  not).
+- Optional: install the plugins into `~/.omp` and `~/.hermes` permanently
+  (opencode is installed and verified; the other two are not).
+- The Windows installer is written but untested (no Windows host here); its
+  Bun install path and PATH registration follow Bun's own docs.

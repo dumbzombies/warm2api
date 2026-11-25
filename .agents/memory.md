@@ -547,3 +547,52 @@ loop, and curl reports `000`/timeout. `test/quota-script.test.ts` uses async
 **Naming:** the shared script is `warm-quota` (not `vibe-quota`), the omp command
 is `/warm-quota`, and `WARM2API_PROXY` mirrors `VIBE_PROXY` — same shape, warm
 prefix, so a reader of either repo recognizes both.
+
+## 2026-11-24 — Published, with a 9router-shaped service command
+
+Public repo: `github.com/dumbzombies/warm2api` (MIT, `main`). The user asked for
+one-shot installers on Linux/Termux/Windows that register a `warm2api` command
+with `start`/`stop`/`status` subcommands, like `9router`.
+
+**The lifecycle is TypeScript, not shell.** 9router's launcher is a 633-line
+bash script because its app is a Next build driven by a `node` CLI. Here the
+proxy is already Bun, and Bun's process API is identical on Termux, Linux, macOS
+and Windows, so `src/service.ts` owns supervision once and the installers stay
+thin. Three platform scripts would have meant three places to fix a pidfile bug.
+
+**Two argv traps, both found by running it.**
+
+1. `Bun.argv[0]` is the *runtime* (`…/bin/bun`), not the script; the script is
+   `Bun.argv[1]`. Spawning `[execPath, "serve"]` makes Bun treat `serve` as a
+   script path → `error: Script not found "serve"`.
+2. `import.meta.path` inside `service.ts` is *service.ts*, not the entry point.
+   The entry has to be threaded in from the CLI (`Bun.argv[1]`).
+3. A `bun build --compile` binary reports `Bun.argv = ["bun", "/$bunfs/root/warm2api", …]`
+   and `process.execPath` *is* the program, so its child is `[execPath, "serve"]`
+   with no script. `serveArgv()` detects the embedded path (`/$bunfs`, `~BUN`).
+
+**`Bun.serve` throws synchronously on a busy port** — a probe must `try { … }
+finally { server.stop(true) }`, not await a rejection.
+
+**Start must be a supervisor, not a spawn.** The child is detached, but its pid
+is recorded only after `/healthz` answers; a failed start removes nothing so the
+log survives, and a `kill -9`'d child reads back as `stale` (pid gone) instead of
+`running`, which also stops a stale record from blocking the next start. Port
+fallback (`41673 busy; using 41674`) is recorded in the state file so `status`
+and `env` stay truthful.
+
+**Version split.** `CLIENT_VERSION` is the version we *impersonate* on the wire
+(`x-warm-client: keelcode-cli/0.6.0`) and must not follow the package version;
+`APP_VERSION` (0.7.0) is what `/healthz`, `/api/state` and `warm2api version`
+report. Conflating them would have silently changed how the gateway treats
+requests.
+
+**Installers** fetch the repo (git, else the codeload tarball), run
+`bun build --compile`, and place one ~90 MB binary on PATH — no registry, no
+runtime deps, no root. Re-running is the upgrade path. Termux uses `pkg install
+bun`; others use bun.sh's installer. Windows registers `%USERPROFILE%\.local\bin`
+in the *User* PATH (no admin).
+
+**Publishing hygiene:** `node_modules/`, `plugins/*/dist/` (installers compile
+their own), and any real account identifiers are excluded/scrubbed; `bundle.test.ts`
+builds its own bundle so ignoring `dist/` is safe. `git ls-files` total 648 K.
