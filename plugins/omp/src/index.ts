@@ -105,7 +105,7 @@ interface StateView {
     binding_label: string | null;
     resets_at: string | null;
   };
-  requests: { total: number; errors: number; tokens_in: number; tokens_out: number; tokens_cached: number; cache_hit_pct: number };
+  requests: { total: number; errors: number; tokens_in: number; tokens_out: number; tokens_cached: number; cache_hit_pct: number | null };
   models: string[];
 }
 
@@ -257,7 +257,9 @@ function quotaText(state: StateView): string {
   lines.push(
     `accounts ${state.accounts.total}`,
     `requests ${state.requests.total} total, ${state.requests.errors} errors`,
-    `cache ${state.requests.cache_hit_pct}% of ${state.requests.tokens_in} prompt tokens`,
+    state.requests.cache_hit_pct === null
+      ? `no prompt tokens measured yet`
+      : `cache ${state.requests.cache_hit_pct}% of ${state.requests.tokens_in} prompt tokens`,
     `models ${state.models.length} available`,
     `proxy ${state.version} up ${state.uptime_s}s`,
   );

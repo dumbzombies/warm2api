@@ -81,6 +81,27 @@ export function formatMicro(micro: number): string {
   return `${negative ? "-" : ""}${whole}.${frac}`;
 }
 
+/**
+ * Columns added after the first release. `CREATE TABLE IF NOT EXISTS` does
+ * nothing to a table that already exists, so an upgraded install would keep the
+ * old shape and every write naming a new column would fail — `recordUsage` and
+ * `recordRequest` both do. Add them in place instead of demanding a reset, which
+ * would throw away the stored tokens.
+ */
+const ADDED_COLUMNS: Array<{ table: string; column: string; definition: string }> = [
+  { table: "accounts", column: "cache_read_tokens", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "accounts", column: "credits_spent_micro", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "request_log", column: "cache_read_tokens", definition: "INTEGER NOT NULL DEFAULT 0" },
+];
+
+function migrate(db: Database): void {
+  for (const { table, column, definition } of ADDED_COLUMNS) {
+    const columns = db.query<{ name: string }, []>(`PRAGMA table_info(${table})`).all();
+    if (columns.some((existing) => existing.name === column)) continue;
+    db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
 let active: Database | null = null;
 
 export function openDatabase(dataDir: string): Database {
@@ -90,6 +111,8 @@ export function openDatabase(dataDir: string): Database {
   db.exec("PRAGMA busy_timeout=5000;");
   db.exec("PRAGMA foreign_keys=ON;");
   db.exec(SCHEMA);
+  migrate(db);
+  db.exec("PRAGMA user_version=1;");
   return db;
 }
 

@@ -239,9 +239,29 @@ export interface StreamOptions {
  * status error without having written a byte to its own client.
  */
 /** A gateway that has not answered by now is not going to answer usefully. */
+function positiveEnvMs(name: string, fallback: number): number {
+  const raw = Number(process.env[name]);
+  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
+
 function upstreamHeaderTimeoutMs(): number {
-  const raw = Number(process.env.WARM2API_UPSTREAM_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw > 0 ? raw : 120_000;
+  return positiveEnvMs("WARM2API_UPSTREAM_TIMEOUT_MS", 120_000);
+}
+
+/**
+ * Control-plane calls (`/v1/models`, `/api/v1/usage`, `/api/v1/me`) are small
+ * JSON exchanges, so they get a much shorter bound than a generation. Without
+ * one, a wedged gateway pins the request, the caller's socket and — for the
+ * catalog refresh — a background promise forever.
+ */
+export function controlTimeoutMs(): number {
+  return positiveEnvMs("WARM2API_CONTROL_TIMEOUT_MS", 15_000);
+}
+
+/** Combine the caller's signal with our own deadline. */
+function bounded(signal: AbortSignal | undefined, ms: number): AbortSignal {
+  const timeout = AbortSignal.timeout(ms);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 export async function openMessages(
@@ -318,7 +338,7 @@ export async function openMessages(
 export async function fetchModels(account: Credentials, signal?: AbortSignal): Promise<ModelInfo[]> {
   const res = await fetch(new URL("/v1/models", getConfig().apiBaseUrl), {
     headers: controlHeaders(account),
-    signal,
+    signal: bounded(signal, controlTimeoutMs()),
   });
   if (!res.ok) throw await errorFromResponse(res);
   const body: unknown = await res.json();
@@ -342,7 +362,7 @@ export interface UsageRaw {
 export async function fetchUsageRaw(account: Credentials, signal?: AbortSignal): Promise<UsageRaw> {
   const res = await fetch(new URL("/api/v1/usage", getConfig().apiBaseUrl), {
     headers: controlHeaders(account),
-    signal,
+    signal: bounded(signal, controlTimeoutMs()),
   });
   if (!res.ok) throw await errorFromResponse(res);
   const raw = await res.text();
@@ -366,7 +386,7 @@ export async function fetchMe(
 ): Promise<{ id: string; name: string; email: string }> {
   const res = await fetch(new URL("/api/v1/me", getConfig().apiBaseUrl), {
     headers: controlHeaders(account),
-    signal,
+    signal: bounded(signal, controlTimeoutMs()),
   });
   if (!res.ok) throw await errorFromResponse(res);
   const body = (await res.json()) as Partial<{ id: string; name: string; email: string }>;
@@ -380,7 +400,7 @@ export async function fetchMe(
 export async function fetchRecent(account: Credentials, signal?: AbortSignal): Promise<RecentRuns> {
   const res = await fetch(new URL("/api/v1/usage/recent", getConfig().apiBaseUrl), {
     headers: controlHeaders(account),
-    signal,
+    signal: bounded(signal, controlTimeoutMs()),
   });
   if (!res.ok) throw await errorFromResponse(res);
   const body = (await res.json()) as unknown;
@@ -396,7 +416,7 @@ export async function mergeWindow(
     method: "POST",
     headers: { ...controlHeaders(account), "content-type": "application/json" },
     body: JSON.stringify({ scope }),
-    signal,
+    signal: bounded(signal, controlTimeoutMs()),
   });
   if (!res.ok) throw await errorFromResponse(res);
   return res.json();

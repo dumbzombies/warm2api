@@ -175,6 +175,13 @@ async function cmdStart(args: string[]): Promise<void> {
   const hostFlag = flag(args, "--host");
   const port = portFlag ? Number.parseInt(portFlag, 10) : config.port;
   const host = hostFlag ?? config.host;
+  if (port === 0) {
+    // `serve` may use 0 (tests do), but a detached child must be probed on a
+    // known port; there is no way to learn the ephemeral one after the fork.
+    console.error("port 0 is not usable with `start`; pass a real port (e.g. --port 41673)");
+    process.exitCode = 2;
+    return;
+  }
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     console.error(`invalid port: ${portFlag}`);
     process.exitCode = 2;
@@ -207,7 +214,18 @@ async function cmdStart(args: string[]): Promise<void> {
 
 async function cmdStop(): Promise<void> {
   const outcome = await stopService({ dataDir: getConfig().dataDir });
-  console.log(outcome === "not-running" ? "warm2api: not running" : `warm2api ${outcome}`);
+  if (outcome === "not-running") {
+    console.log("warm2api: not running");
+    return;
+  }
+  if (outcome === "refused") {
+    // The recorded pid now belongs to something else. Say so loudly: the user
+    // asked for a stop and nothing was stopped.
+    console.error("warm2api: the recorded pid now belongs to another process; left it alone and cleared the stale record");
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`warm2api ${outcome}`);
 }
 
 async function cmdStatus(args: string[]): Promise<void> {
@@ -361,17 +379,22 @@ Start the service, then point clients at it:
   Anthropic  http://127.0.0.1:41673
   Dashboard  warm2api status`;
 
+/** Commands that must not touch the data dir (no key, no database, no mkdir). */
+const READ_ONLY_COMMANDS = new Set(["help", "--help", "-h", "version", "--version", "-v"]);
+
 async function main(): Promise<void> {
   const [command = "help", ...args] = process.argv.slice(2);
+  // `warm2api --help` on a read-only or full disk used to fail with ENOENT from
+  // generating an API key nobody asked for.
+  if (READ_ONLY_COMMANDS.has(command)) {
+    if (command === "version" || command === "--version" || command === "-v") console.log(APP_VERSION);
+    else console.log(USAGE);
+    return;
+  }
   const config = getConfig();
   initDb(config.dataDir);
 
   switch (command) {
-    case "help":
-    case "--help":
-    case "-h":
-      console.log(USAGE);
-      return;
     case "serve":
       await cmdServe();
       return;

@@ -7,6 +7,7 @@ import {
   quotaFromSnapshot,
   recordSnapshot,
   reviveAccount,
+  setCreditsSpent,
   setPlan,
   type Account,
 } from "./accounts.ts";
@@ -34,6 +35,8 @@ async function pollAccount(account: Account, cfg: Config, now: number): Promise<
 
     const quota = quotaFromSnapshot(raw);
     const remaining = quota ? quota.remainingMicro : null;
+    // The snapshot's own spend figure replaces the local estimate.
+    setCreditsSpent(account.id, quota?.spentMicro ?? null);
 
     // Refresh rule: refilled ⇒ active. `disabled`/`needs_login` need a human.
     if (account.state === "retired" && remaining !== null && remaining > 0) {

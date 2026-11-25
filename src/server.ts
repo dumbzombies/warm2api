@@ -19,6 +19,7 @@ import { parseJsonResponse, toAnthropicRequest } from "./translate/openai-in.ts"
 import { collectOpenAI, sseToOpenAI } from "./translate/openai-out.ts";
 import {
   anthropicFrames,
+  assertMessageShapes,
   collectMessage,
   errorFrame,
   estimateTokens,
@@ -52,6 +53,7 @@ export interface RunningServer {
   url: string;
   port: number;
   external: boolean;
+  /** Stop accepting, let in-flight responses finish, then close. */
   stop(): void;
 }
 
@@ -195,10 +197,10 @@ async function readJson(req: Request): Promise<Record<string, unknown>> {
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
     throw new ApiError(413, "request body too large", "payload_too_large");
   }
-  const text = await req.text();
-  if (text.length > MAX_BODY_BYTES) {
-    throw new ApiError(413, "request body too large", "payload_too_large");
-  }
+  // `text.length` counts UTF-16 code units, so a 32 MB limit on characters let a
+  // multi-byte body through at up to 3x the memory. Count bytes while reading and
+  // stop early instead of buffering everything and rejecting afterwards.
+  const text = await readBoundedText(req, MAX_BODY_BYTES);
   if (text.trim().length === 0) return {};
   try {
     const parsed: unknown = JSON.parse(text);
@@ -212,6 +214,33 @@ async function readJson(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
+/**
+ * Read a request body as UTF-8 text, aborting once `limit` bytes have arrived.
+ * A missing content-length is exactly the case that needs this: without a
+ * declared size the only way to bound memory is to stop reading.
+ */
+async function readBoundedText(req: Request, limit: number): Promise<string> {
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const decoder = new TextDecoder();
+  let received = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > limit) {
+        throw new ApiError(413, "request body too large", "payload_too_large");
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+}
+
 // ---------- model catalog ----------
 
 const catalogCache = new Map<string, { at: number; models: ModelInfo[] }>();
@@ -221,27 +250,52 @@ function withDefaultModel(models: ModelInfo[]): ModelInfo[] {
   return [...models, ...seedModels().filter((seed) => seed.id === "gpt-5.6-luna")];
 }
 
-async function liveCatalog(cfg: Config, signal?: AbortSignal, quiet = false): Promise<ModelInfo[]> {
+/**
+ * One refresh at a time per base URL. The cache is empty for the whole duration
+ * of a fetch, so a burst of cold `/api/state` calls (the dashboard polls, the
+ * quota script polls) would otherwise start one upstream request each — the
+ * earlier version leaked N sockets when the gateway hung. Sharing the in-flight
+ * promise makes a burst cost exactly one request.
+ */
+const catalogInFlight = new Map<string, Promise<ModelInfo[]>>();
+
+async function liveCatalog(cfg: Config, quiet = false): Promise<ModelInfo[]> {
   const cached = catalogCache.get(cfg.apiBaseUrl);
   if (cached && Date.now() - cached.at < CATALOG_TTL_MS) return cached.models;
+
+  const pending = catalogInFlight.get(cfg.apiBaseUrl);
+  if (pending) return pending;
 
   const accounts = listAccounts();
   const account = accounts.find((a) => a.state === "active") ?? accounts[0];
   if (!account) return seedModels();
 
-  try {
-    const models = await fetchModels(account, signal);
-    if (models.length > 0) {
-      const merged = withDefaultModel(models);
-      catalogCache.set(cfg.apiBaseUrl, { at: Date.now(), models: merged });
-      return merged;
+  // The shared fetch deliberately ignores the caller's signal: one caller
+  // hanging up must not cancel the refresh the others are waiting on. The
+  // timeout inside `fetchModels` still bounds it.
+  const refresh = (async (): Promise<ModelInfo[]> => {
+    try {
+      const models = await fetchModels(account);
+      if (models.length > 0) {
+        const merged = withDefaultModel(models);
+        catalogCache.set(cfg.apiBaseUrl, { at: Date.now(), models: merged });
+        return merged;
+      }
+    } catch (err) {
+      // A background refresh has nobody to tell; only a foreground call logs.
+      if (!quiet) console.warn(`[warm2api] model catalog unavailable: ${String(err)}`);
     }
-  } catch (err) {
-    // A background refresh has nobody to tell and may be cancelled with the
-    // request that started it; only a foreground catalog call is worth a log.
-    if (!quiet) console.warn(`[warm2api] model catalog unavailable: ${String(err)}`);
+    return seedModels();
+  })();
+
+  catalogInFlight.set(cfg.apiBaseUrl, refresh);
+  try {
+    return await refresh;
+  } finally {
+    // Only clear when the entry is still ours: a refresh that resolved after a
+    // cache reset must not delete a newer one.
+    if (catalogInFlight.get(cfg.apiBaseUrl) === refresh) catalogInFlight.delete(cfg.apiBaseUrl);
   }
-  return seedModels();
 }
 
 function resetCatalogCache(): void {
@@ -258,7 +312,7 @@ function resetCatalogCache(): void {
 function catalogIds(cfg: Config): string[] {
   const cached = catalogCache.get(cfg.apiBaseUrl);
   if (cached && Date.now() - cached.at < CATALOG_TTL_MS) return cached.models.map((model) => model.id);
-  void liveCatalog(cfg, undefined, true).catch(() => []);
+  void liveCatalog(cfg, true).catch(() => []);
   return (cached?.models ?? seedModels()).map((model) => model.id);
 }
 
@@ -425,7 +479,7 @@ async function openaiChat(req: Request, cfg: Config): Promise<Response> {
     throw new ApiError(400, "messages is required", "invalid_messages");
   }
 
-  const catalog = await liveCatalog(cfg, req.signal);
+  const catalog = await liveCatalog(cfg);
   const model = resolveModel(body.model, catalog.map((m) => m.id));
   const { request, nudge, jsonSchema } = toAnthropicRequest(body, model);
   const effort = normaliseEffort(body.reasoning_effort);
@@ -463,30 +517,48 @@ async function openaiChat(req: Request, cfg: Config): Promise<Response> {
   let response = null as Awaited<ReturnType<typeof collectOpenAI>> | null;
   let usage: AnthropicUsage = { input_tokens: 0, output_tokens: 0 };
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    result = await openWithRotation({ model, request: payload, signal: req.signal });
-    response = await collectOpenAI(result.events, {
-      id,
-      model,
-      onUsage: (_usage, raw) => {
-        usage = raw;
-      },
-    });
-    if (attempt > 0) break;
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      result = await openWithRotation({ model, request: payload, signal: req.signal });
+      response = await collectOpenAI(result.events, {
+        id,
+        model,
+        onUsage: (_usage, raw) => {
+          usage = raw;
+        },
+      });
+      if (attempt > 0) break;
 
-    const noToolCall = !response.choices[0]?.message.tool_calls;
-    if (nudge && noToolCall) {
-      payload = strengthenNudge(payload, nudge);
-      continue;
-    }
-    if (jsonSchema) {
-      const text = response.choices[0]?.message.content ?? "";
-      if (!parseJsonResponse(text, jsonSchema).ok) {
-        payload = strengthenJson(payload, jsonSchema);
+      const noToolCall = !response.choices[0]?.message.tool_calls;
+      if (nudge && noToolCall) {
+        payload = strengthenNudge(payload, nudge);
         continue;
       }
+      if (jsonSchema) {
+        const text = response.choices[0]?.message.content ?? "";
+        if (!parseJsonResponse(text, jsonSchema).ok) {
+          payload = strengthenJson(payload, jsonSchema);
+          continue;
+        }
+      }
+      break;
     }
-    break;
+  } catch (err) {
+    // Failures must be auditable too: the dashboard's error count and the
+    // hourly chart both read `request_log`, and a buffered call that threw used
+    // to disappear from it entirely while the streaming path recorded it.
+    recordRequest({
+      accountId: result?.account.id ?? null,
+      surface: "openai",
+      model,
+      status: statusOf(err),
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens,
+      cacheReadTokens: usage.cache_read_input_tokens ?? 0,
+      ms: Date.now() - started,
+      errorCode: codeOf(err),
+    });
+    throw err;
   }
 
   if (!response || !result) throw new ApiError(502, "no upstream response", "no_usable_account", "api_error");
@@ -510,11 +582,9 @@ async function openaiChat(req: Request, cfg: Config): Promise<Response> {
 
 async function anthropicMessages(req: Request, cfg: Config): Promise<Response> {
   const body = (await readJson(req)) as unknown as AnthropicRequest;
-  if (!Array.isArray(body.messages)) {
-    throw new ApiError(400, "messages is required", "invalid_messages");
-  }
+  assertMessageShapes(body);
 
-  const catalog = await liveCatalog(cfg, req.signal);
+  const catalog = await liveCatalog(cfg);
   const model = resolveModel(body.model, catalog.map((m) => m.id));
   const request = prepareAnthropicRequest(body, model);
 
@@ -534,10 +604,26 @@ async function anthropicMessages(req: Request, cfg: Config): Promise<Response> {
   }
 
   const started = Date.now();
-  const opened = await openWithRotation({ model, request, signal: req.signal });
-  const message = await collectMessage(opened.events, model);
+  let accountId: string | null = null;
+  let message: Awaited<ReturnType<typeof collectMessage>>;
+  try {
+    const opened = await openWithRotation({ model, request, signal: req.signal });
+    accountId = opened.account.id;
+    message = await collectMessage(opened.events, model);
+  } catch (err) {
+    // Same audit rule as the OpenAI surface: a failed call still happened.
+    recordRequest({
+      accountId,
+      surface: "anthropic",
+      model,
+      status: statusOf(err),
+      ms: Date.now() - started,
+      errorCode: codeOf(err),
+    });
+    throw err;
+  }
   recordRequest({
-    accountId: opened.account.id,
+    accountId,
     surface: "anthropic",
     model,
     status: 200,
@@ -552,9 +638,7 @@ async function anthropicMessages(req: Request, cfg: Config): Promise<Response> {
 
 async function countTokens(req: Request): Promise<Response> {
   const body = (await readJson(req)) as unknown as AnthropicRequest;
-  if (!Array.isArray(body.messages)) {
-    throw new ApiError(400, "messages is required", "invalid_messages");
-  }
+  assertMessageShapes(body);
   return json({ input_tokens: estimateTokens(body) });
 }
 
@@ -594,6 +678,7 @@ function accountView(account: Account): unknown {
     output_tokens: account.outputTokens,
     cache_read_tokens: account.cacheReadTokens,
     credits_spent_usd: account.creditsSpentMicro / 1_000_000,
+    spent_usd: quota?.spentMicro === null || quota?.spentMicro === undefined ? null : quota.spentMicro / 1_000_000,
   };
 }
 
@@ -687,9 +772,10 @@ async function handle(req: Request, cfg: Config): Promise<Response> {
 
   if (!isInferencePath(path)) return route(req, cfg, url, path);
 
-  // A chunked body declares nothing, so reserve a conservative floor: without it
-  // an unknown-size stream would cost zero and slip past the budget entirely.
-  const UNKNOWN_BODY_RESERVE = 1024 * 1024;
+  // A chunked body declares nothing. Reserve the largest body `readJson` will
+  // accept, because that is the worst case a single stream can actually hold;
+  // the earlier 1 MB floor let a handful of 32 MB uploads exceed the budget.
+  const UNKNOWN_BODY_RESERVE = MAX_BODY_BYTES;
   const declared = Number(req.headers.get("content-length") ?? 0);
   const cost = Number.isFinite(declared) && declared > 0 ? declared : UNKNOWN_BODY_RESERVE;
   if (inFlightBytes + cost > maxInFlightBytes()) {
@@ -801,7 +887,7 @@ async function route(req: Request, cfg: Config, url: URL, path: string): Promise
 
     if (path === "/v1/models") {
       if (req.method !== "GET") return jsonError(405, "method not allowed", "method_not_allowed");
-      const models = await liveCatalog(cfg, req.signal);
+      const models = await liveCatalog(cfg);
       return json(req.headers.get("anthropic-version") ? anthropicModelList(models) : openAIModelList(models));
     }
 
@@ -854,7 +940,7 @@ if (path === "/admin/accounts" || path.startsWith("/admin/accounts/")) {
 
 if (path === "/admin/models") {
   if (req.method !== "GET") return jsonError(405, "method not allowed", "method_not_allowed");
-  const catalog = await liveCatalog(cfg, req.signal);
+  const catalog = await liveCatalog(cfg);
   return json({
     models: catalog.map((model) => {
       const meta = modelMeta(model.id);
@@ -897,14 +983,22 @@ if (path === "/admin/poll") {
   return jsonError(404, `unknown route: ${path}`, "not_found");
 }
 
+/**
+ * True when a *warm2api* instance already answers on the configured address.
+ *
+ * `{ok:true}` alone is not enough: any local dev server replying that way (a
+ * health endpoint of some other tool, a stale fixture) would make this process
+ * hand out a URL it does not own, so `serve` would exit 0 having served nothing.
+ * The version field is warm2api's own and is compared against ours.
+ */
 async function alreadyServing(cfg: Config): Promise<boolean> {
   try {
     const res = await fetch(`http://${cfg.host}:${cfg.port}/healthz`, {
       signal: AbortSignal.timeout(500),
     });
     if (!res.ok) return false;
-    const body = (await res.json()) as { ok?: unknown };
-    return body.ok === true;
+    const body = (await res.json()) as { ok?: unknown; version?: unknown };
+    return body.ok === true && body.version === APP_VERSION;
   } catch {
     return false;
   }
@@ -933,7 +1027,10 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
     port,
     external: false,
     stop() {
-      server.stop(true);
+      // Graceful: `stop(true)` severs in-flight streams, which turns a normal
+      // `warm2api stop` into a truncated response for whoever is mid-request.
+      // Let them drain; the supervisor's SIGKILL handles a wedged process.
+      server.stop();
     },
   };
 }

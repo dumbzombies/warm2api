@@ -34,7 +34,7 @@ if [ -n "$state" ]; then
              "  binding   \($p.binding_label // "-")"
         end),
       "  states    \(.accounts | del(.list, .total) | to_entries | map(select(.value > 0) | "\(.key)=\(.value)") | join(" ") // "-")",
-      "  requests  \(.requests.total) total, \(.requests.errors) errors, \(.requests.cache_hit_pct)% cached",
+      "  requests  \(.requests.total) total, \(.requests.errors) errors, \(.requests.cache_hit_pct | if . == null then "cache unmeasured" else "\(.)% cached" end)",
       "  models    \(.models | length) available",
       "  source    proxy \(.version) uptime \(.uptime_s)s"'
   exit 0

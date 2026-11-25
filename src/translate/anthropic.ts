@@ -2,6 +2,7 @@
 // (when enabled) attestation aside, events go through untouched.
 
 import { clampMaxTokens } from "./models.ts";
+import { ApiError } from "../errors.ts";
 import { mergeUsage } from "../upstream.ts";
 import type {
   AnthropicBlock,
@@ -18,6 +19,16 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function numeric(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/** Reject bodies whose `messages` entries are not objects, before they reach a translator. */
+export function assertMessageShapes(body: AnthropicRequest): void {
+  if (!Array.isArray(body.messages)) throw new ApiError(400, "messages is required", "invalid_messages");
+  for (const message of body.messages) {
+    if (!message || typeof message !== "object" || Array.isArray(message)) {
+      throw new ApiError(400, "each message must be an object", "invalid_messages");
+    }
+  }
 }
 
 export function prepareAnthropicRequest(body: AnthropicRequest, model: string): AnthropicRequest {
@@ -185,7 +196,10 @@ export function estimateTokens(body: AnthropicRequest): number {
   };
 
   addBlocks(body.system);
-  for (const message of body.messages ?? []) addBlocks(message.content);
+  // Entries can be anything: this is called on unvalidated client JSON.
+  for (const message of body.messages ?? []) {
+    if (message && typeof message === "object") addBlocks(message.content);
+  }
 
   const framing = 4 * (body.messages?.length ?? 0);
   const toolJson = body.tools && body.tools.length > 0 ? JSON.stringify(body.tools) : "";

@@ -110,6 +110,9 @@ export interface AccountStateView {
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
+  /** Upstream-reported spend this cycle, or null when no snapshot carries it. */
+  spent_usd: number | null;
+  /** Local counter, kept for continuity; may read 0 for unpriced models. */
   credits_spent_usd: number;
 }
 
@@ -131,6 +134,7 @@ function accountStateView(account: Account): AccountStateView {
     input_tokens: account.inputTokens,
     output_tokens: account.outputTokens,
     cache_read_tokens: account.cacheReadTokens,
+    spent_usd: quota?.spentMicro === null || quota?.spentMicro === undefined ? null : dollars(quota.spentMicro),
     credits_spent_usd: dollars(account.creditsSpentMicro),
   };
 }
@@ -169,9 +173,12 @@ export function apiState(models: readonly string[]): Record<string, unknown> {
       tokens_in: totals.input_tokens,
       tokens_out: totals.output_tokens,
       tokens_cached: totals.cache_read_tokens,
+      // No tokens measured yet is "unknown", not "0% cached": the same rule the
+      // pool figures follow, so a reader cannot mistake an idle proxy for a
+      // proxy whose cache never hits.
       cache_hit_pct: totals.input_tokens
         ? round((totals.cache_read_tokens / totals.input_tokens) * 100, 1)
-        : 0,
+        : null,
       buckets: series(24, 24),
     },
     models: [...models],

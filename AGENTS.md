@@ -13,7 +13,7 @@ Bun ≥ 1.1 on Termux/aarch64. No runtime dependencies: `Bun.serve`, `bun:sqlite
 ## Layout
 
 - `src/config.ts` — lazy config (`getConfig`/`setConfig`), env contract, API key.
-- `src/db.ts` — schema, micro-dollar helpers, connection.
+- `src/db.ts` — schema, additive migrations (`ADDED_COLUMNS` + `PRAGMA user_version`), micro-dollar helpers, connection.
 - `src/accounts.ts` — account rows, quota snapshots, routing (`selectAccount`).
 - `src/upstream.ts` — gateway calls, SSE decode, error mapping.
 - `src/dispatch.ts` — failure→action table, rotation.

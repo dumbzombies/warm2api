@@ -197,6 +197,16 @@ export function purgeAccount(id: string): boolean {
   return purge(id);
 }
 
+/**
+ * Replace the account's spend with the upstream's own figure. `recordUsage`
+ * accumulates a local estimate; when a snapshot knows the real number, it wins,
+ * because the local price table has no entry for most model ids.
+ */
+export function setCreditsSpent(id: string, micro: number | null): void {
+  if (micro === null) return;
+  getDb().run("UPDATE accounts SET credits_spent_micro = ? WHERE id = ?", [Math.max(0, Math.trunc(micro)), id]);
+}
+
 export function recordUsage(
   id: string,
   u: {
@@ -263,6 +273,12 @@ export interface QuotaView {
   bindingLabel: string | null;
   /** The one-time credits pool, when the upstream reports it. */
   lifetime: { remainingMicro: number; limitMicro: number } | null;
+  /**
+   * Spent this cycle as the *upstream* reports it, in micro-dollars, or null
+   * when the snapshot omits it. This is authoritative: a local price table
+   * covers only the model families it knows, so it reads 0 for everything else.
+   */
+  spentMicro: number | null;
   /** Every rolling window, so the UI can show more than the tightest one. */
   windows: {
     id: string | null;
@@ -327,6 +343,23 @@ export function quotaFromSnapshot(raw: string): QuotaView | null {
 
   if (windows.length === 0 && !lifetime) return null;
 
+  // Spent this cycle, in micro-dollars. The authoritative figure is the
+  // lifetime pool's `used_usd`, a plain dollar string. `credits_spent` is only
+  // a fallback, and its unit varies between deployments — the live gateway
+  // reports micro-dollars as an integer ("213"), while older fixtures report
+  // dollars with a decimal point — so an integer is read as micro and anything
+  // with a point as dollars.
+  const spentMicro = ((): number | null => {
+    const used = lifetimeRaw && typeof lifetimeRaw === "object" ? (lifetimeRaw as { used_usd?: unknown }).used_usd : undefined;
+    if (typeof used === "string" || typeof used === "number") return parseMicro(used);
+    const raw = (root as { credits_spent?: unknown }).credits_spent;
+    if (typeof raw === "number") return Number.isInteger(raw) ? Math.round(raw) : Math.round(raw * 1_000_000);
+    if (typeof raw !== "string") return null;
+    const text = raw.trim();
+    if (text === "" || !Number.isFinite(Number(text))) return null;
+    return text.includes(".") ? parseMicro(text) : Math.round(Number(text));
+  })();
+
   // Three budgets can bind an account: each rolling window, and the one-time
   // credits. Report the tightest *fraction*, because a nearly-empty lifetime
   // pool matters even when the 5-hour window looks healthy.
@@ -362,6 +395,7 @@ export function quotaFromSnapshot(raw: string): QuotaView | null {
     binding: binding.kind,
     bindingLabel: binding.label,
     lifetime,
+    spentMicro,
     windows,
   };
 }
@@ -375,12 +409,32 @@ export function latestQuota(accountId: string): QuotaView | null {
   return row ? quotaFromSnapshot(row.raw) : null;
 }
 
+/** Snapshots kept per account. The poller writes one a minute; the UI needs one. */
+const SNAPSHOTS_PER_ACCOUNT = 120;
+
+/**
+ * Store a quota snapshot, then trim the account's history.
+ *
+ * `latestQuota` reads only the newest row, so an untrimmed table is pure growth:
+ * a proxy left running wrote 504 rows in a day and would reach ~180k a year,
+ * each holding the full usage JSON. Trimming by row count (not age) keeps a long
+ * streak of failures — which record nothing new — from erasing the last good
+ * reading.
+ */
 export function recordSnapshot(accountId: string, raw: string, capturedAt = Date.now()): void {
-  getDb().run("INSERT INTO usage_snapshots (account_id, captured_at, raw) VALUES (?, ?, ?)", [
-    accountId,
-    capturedAt,
-    raw,
-  ]);
+  const db = getDb();
+  const insert = db.transaction((id: string, body: string, at: number): void => {
+    db.run("INSERT INTO usage_snapshots (account_id, captured_at, raw) VALUES (?, ?, ?)", [id, at, body]);
+    db.run(
+      `DELETE FROM usage_snapshots
+        WHERE account_id = ?
+          AND id NOT IN (
+            SELECT id FROM usage_snapshots WHERE account_id = ? ORDER BY captured_at DESC, id DESC LIMIT ?
+          )`,
+      [id, id, SNAPSHOTS_PER_ACCOUNT],
+    );
+  });
+  insert(accountId, raw, capturedAt);
 }
 
 /**

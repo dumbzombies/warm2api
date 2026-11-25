@@ -596,3 +596,55 @@ in the *User* PATH (no admin).
 **Publishing hygiene:** `node_modules/`, `plugins/*/dist/` (installers compile
 their own), and any real account identifiers are excluded/scrubbed; `bundle.test.ts`
 builds its own bundle so ignoring `dist/` is safe. `git ls-files` total 648 K.
+
+## 2026-11-25 — Adversarial pass: 15 defects, and what they have in common
+
+Method: every finding was reproduced against a running process or a synthetic
+database before it was believed, then fixed, then pinned by a test in
+`test/regressions.test.ts` / `test/cli-regressions.test.ts` (`bun test` →
+118 pass, 1 skip, 0 fail).
+
+**The four that would have bitten a real user first**
+
+1. *No migration path.* `CREATE TABLE IF NOT EXISTS` is a no-op on an existing
+   table, so `cache_read_tokens` was absent on any upgraded install and **every
+   request write threw**. The proxy would serve and then fail to record, and the
+   error surfaced as a generic 500. Fix: additive `ALTER TABLE` driven by
+   `ADDED_COLUMNS` + `PRAGMA user_version`. Any future column must be added there
+   too; `SCHEMA` alone only helps fresh installs.
+2. *`start --host` was a security hole.* The supervisor spawned the child with
+   the parent's environment, which `--host` never touched — so the child bound
+   loopback while `status` advertised the flag, **and the public-bind guard never
+   saw the address in use**. `start --host 0.0.0.0` produced an unauthenticated
+   proxy. The host is now forwarded explicitly and `assertBindable()` runs before
+   the fork, in the process that has the flag.
+3. *`stop` could kill an unrelated process.* Pids get recycled; a day-old record
+   pointed at whatever took that pid and `stop` sent SIGTERM then SIGKILL. Now
+   `/proc/<pid>/cmdline` must look like warm2api, otherwise the record is
+   cleared and the command exits 1. **Termux reports `process.platform ===
+   "android"`**, so the first version of this guard silently disabled itself —
+   gate on whether `/proc` is readable, never on a platform name.
+4. *Attestation could take the whole pool down.* A transient handshake failure
+   was rethrown while `attestationEnabled()` stayed true, so three client calls
+   became nine handshakes and zero completions. It now degrades to unsigned (what
+   the real client does) and the 60 s backoff is actually consulted.
+
+**Latency, measured not assumed.** A 1-token completion took 26 s. Direct to
+`api.keelcode.ai` it was also 26 s (16.8 s TTFB), so this is the gateway, not the
+proxy; `/v1/models` answers in 0.13 s. Don't "optimize" the proxy for this.
+
+**Smaller but real:** unbounded control fetches (a wedged gateway pinned
+`/api/refresh` forever), catalog fan-out (six cold `/api/state` calls → six
+sockets), `cache_hit_pct: 0` for no data, `readJson` buffering before rejecting
+and measuring UTF-16 units, `messages:[null]` → 500 on all three POST routes,
+buffered failures missing from the request log while streamed ones were logged,
+snapshots never trimmed (504/day), spend always 0 because the local price table
+covers only Claude ids, `alreadyServing` trusting any `{ok:true}`, `env`
+exporting an empty key when `WARM2API_KEY` supplied it, `start --port 0` leaving
+an orphan child, and `--help` creating a data dir.
+
+**Unit trap worth remembering.** The upstream's `credits_spent` is a
+**micro-dollar integer** ("213" next to `used_usd: "0.000213"`), but the test
+fixtures write dollars ("0.120000"). `parseMicro` scales by 1e6 and must not be
+applied to the integer form. `used_usd` is preferred because it is unambiguous;
+the fallback is integers-as-micro, dotted strings-as-dollars.

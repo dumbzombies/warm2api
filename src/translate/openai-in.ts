@@ -1,7 +1,7 @@
 // OpenAI Chat Completions request → Anthropic Messages request. Everything the
 // gateway cannot express is either rejected explicitly or emulated in the prompt.
 
-import { unsupportedParameter } from "../errors.ts";
+import { ApiError, unsupportedParameter } from "../errors.ts";
 import { clampMaxTokens } from "./models.ts";
 import { toolChoiceNudge, toolResultsToAnthropic, toolsToAnthropic } from "./tools.ts";
 import type {
@@ -139,7 +139,13 @@ export function toAnthropicRequest(body: OpenAIChatRequest, model: string): Tran
   const systemParts: string[] = [];
   const messages: AnthropicMessage[] = [];
 
-  for (const msg of body.messages) {
+  for (const raw of body.messages) {
+    // A null/string entry is a malformed request, not a server fault: report it
+    // as 400 instead of letting `msg.role` throw a 500 with a stack trace.
+    if (!raw || typeof raw !== "object") {
+      throw new ApiError(400, "each message must be an object", "invalid_messages");
+    }
+    const msg = raw as OpenAIMessage;
     if (msg.role === "system" || msg.role === "developer") {
       const text = textOf(msg.content);
       if (text.length > 0) systemParts.push(text);

@@ -164,8 +164,12 @@ let retryAt = 0;
 
 export function attestationEnabled(): boolean {
   if (getConfig().attestation === "off") return false;
-  if (support === "unsupported" && Date.now() < retryAt) return false;
-  return support !== "unsupported";
+  if (support === "unsupported") return false;
+  // A failed handshake sets `retryAt` but leaves support "unknown"; check the
+  // backoff for both non-supported states so a flapping endpoint is retried once
+  // a minute instead of on every request.
+  if (Date.now() < retryAt) return false;
+  return true;
 }
 
 /**
@@ -177,7 +181,7 @@ export async function ensureAttestation(
   account: Account,
   signal?: AbortSignal,
 ): Promise<Account["attest"]> {
-  if (!attestationEnabled()) return null;
+  if (!attestationEnabled()) return account.attest;
   if (account.attest && account.attest.expiresAt - 300_000 > Date.now()) return account.attest;
 
   try {
@@ -193,10 +197,13 @@ export async function ensureAttestation(
     // A transient failure (network, 5xx, one account's 403) says nothing about
     // whether the upstream implements attestation, so it must not disable the
     // feature for every other account. Back off briefly and let the caller
-    // proceed unsigned, exactly as the real client does.
+    // proceed **unsigned**, exactly as the real client does — rethrowing here
+    // aborted the whole request and, with `attestationEnabled()` still true,
+    // burned every rotation attempt on the same handshake.
     support = support === "supported" ? "supported" : "unknown";
     retryAt = Date.now() + 60_000;
-    throw err;
+    console.warn(`[warm2api] attestation handshake failed, sending this request unsigned: ${String(err)}`);
+    return account.attest;
   }
 }
 

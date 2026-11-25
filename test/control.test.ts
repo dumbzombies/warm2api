@@ -28,7 +28,7 @@ interface State {
   uptime_s: number;
   accounts: { total: number; list: unknown[] };
   pool: Pool;
-  requests: { total: number; errors: number; cache_hit_pct: number };
+  requests: { total: number; errors: number; cache_hit_pct: number | null };
   models: string[];
 }
 
