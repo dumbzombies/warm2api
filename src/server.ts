@@ -2,7 +2,7 @@
 // local API key, which is compared in constant time.
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { APP_VERSION, getConfig, type Config } from "./config.ts";
+import { APP_VERSION, getConfig, isLoopbackHost, type Config } from "./config.ts";
 import { ApiError } from "./errors.ts";
 import {
   addAccount,
@@ -59,8 +59,12 @@ export interface RunningServer {
 
 /**
  * Browser clients: the OpenAI and Anthropic SDKs run from web pages too, so the
- * inference surface answers preflights. Credentials are not CORS-cookie-based
- * here (the key travels in a header), so a wildcard origin is safe.
+ * inference surface answers preflights.
+ *
+ * A wildcard origin is safe only while the proxy *authenticates*: a page can
+ * send `Origin` but cannot send the key. On an unguarded proxy (the loopback
+ * default) the wildcard made this an open relay any visited site could bill —
+ * see `rejectUnsafeOrigin`, which is what makes the wildcard conditional.
  */
 const CORS_HEADERS: Record<string, string> = {
   "access-control-allow-origin": "*",
@@ -71,6 +75,44 @@ const CORS_HEADERS: Record<string, string> = {
 
 function corsHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return { ...CORS_HEADERS, ...extra };
+}
+
+/** A page served from this machine (a local dev tool, the dashboard). */
+function isLocalOrigin(origin: string): boolean {
+  if (origin === "null") return true;
+  try {
+    return isLoopbackHost(new URL(origin).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Refuse browser requests from another site when nothing authenticates them.
+ *
+ * With the API key required, a cross-origin page can reach the endpoint but
+ * cannot authorise, so the wildcard `access-control-allow-origin` leaks nothing.
+ * Without a key — the default on loopback — the same wildcard let any page the
+ * operator visited read responses and spend their quota. There is no credential
+ * to distinguish that page from a legitimate local app, so the only safe rule is
+ * "local pages only" while unguarded.
+ */
+function rejectUnsafeOrigin(req: Request, cfg: Config): Response | null {
+  if (cfg.requireApiKey) return null;
+  const origin = req.headers.get("origin");
+  if (!origin || isLocalOrigin(origin)) return null;
+  return new Response(
+    JSON.stringify({
+      error: {
+        message:
+          "cross-origin requests are refused while the proxy has no API key; set WARM2API_API_AUTH=on " +
+          "or call it from a loopback page",
+        type: "permission_error",
+        code: "origin_not_allowed",
+      },
+    }),
+    { status: 403, headers: { "content-type": "application/json", "cache-control": "no-store" } },
+  );
 }
 
 function json(data: unknown, status = 200): Response {
@@ -767,6 +809,8 @@ function isInferencePath(path: string): boolean {
 }
 
 async function handle(req: Request, cfg: Config): Promise<Response> {
+  const refused = rejectUnsafeOrigin(req, cfg);
+  if (refused) return refused;
   const url = new URL(req.url);
   const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname;
 

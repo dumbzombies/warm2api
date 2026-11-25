@@ -396,3 +396,81 @@ describe("attestation degrades instead of failing the request", () => {
     }
   }, 30_000);
 });
+
+describe("an unguarded proxy is not a cross-origin relay", () => {
+  // The loopback default requires no API key, and every response carried
+  // `access-control-allow-origin: *`. A wildcard is only harmless when the
+  // request must be authorised; here any web page the operator visited could
+  // POST a prompt and read the reply, spending their Warm quota. Reproduced:
+  // foreign Origin + no key -> 200 and an upstream call.
+  test("the local no-key default refuses a foreign Origin", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "warm2api-origin-"));
+    let hits = 0;
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(req) {
+        const path = new URL(req.url).pathname;
+        if (path === "/v1/models") return Response.json({ data: [{ id: "gpt-5.6-luna" }] });
+        if (path === "/v1/messages") {
+          hits += 1;
+          return new Response(
+            'event: message_start\ndata: {"type":"message_start","message":{"id":"m","usage":{"input_tokens":1,"output_tokens":0}}}\n\n' +
+              "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        }
+        return Response.json({});
+      },
+    });
+    const saved = { key: process.env.WARM2API_KEY, auth: process.env.WARM2API_API_AUTH };
+    try {
+      const { loadConfig, setConfig, resetConfig } = await import("../src/config.ts");
+      const { openDatabase, setDb, closeDb } = await import("../src/db.ts");
+      const { addAccount } = await import("../src/accounts.ts");
+      const { startServer } = await import("../src/server.ts");
+
+      process.env.WARM2API_DATA = dataDir;
+      process.env.WARM2API_API_BASE = `http://127.0.0.1:${upstream.port}`;
+      process.env.WARM2API_PORT = "0";
+      process.env.WARM2API_ATTEST = "off";
+      delete process.env.WARM2API_KEY;
+      delete process.env.WARM2API_API_AUTH;
+      resetConfig();
+      const cfg = loadConfig();
+      setConfig(cfg);
+      setDb(openDatabase(dataDir));
+      expect(cfg.requireApiKey).toBe(false);
+      addAccount({ label: "a", accessToken: "t", expiresAt: Date.now() + 86_400_000 });
+
+      const server = await startServer(cfg);
+      const call = (headers: Record<string, string>): Promise<Response> =>
+        fetch(`${server.url}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...headers },
+          body: JSON.stringify({ model: "gpt-5.6-luna", messages: [{ role: "user", content: "hi" }] }),
+        });
+
+      const foreign = await call({ origin: "https://evil.example" });
+      expect(foreign.status).toBe(403);
+      expect((await foreign.json() as { error: { code: string } }).error.code).toBe("origin_not_allowed");
+      // The refusal happens before any quota is spent.
+      expect(hits).toBe(0);
+
+      // A local page and a non-browser client still work.
+      expect((await call({ origin: "http://localhost:3000" })).status).toBe(200);
+      expect((await call({})).status).toBe(200);
+      expect(hits).toBe(2);
+
+      server.stop();
+      closeDb();
+    } finally {
+      if (saved.key === undefined) delete process.env.WARM2API_KEY;
+      else process.env.WARM2API_KEY = saved.key;
+      if (saved.auth === undefined) delete process.env.WARM2API_API_AUTH;
+      else process.env.WARM2API_API_AUTH = saved.auth;
+      upstream.stop(true);
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  }, 30_000);
+});

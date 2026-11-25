@@ -648,3 +648,23 @@ an orphan child, and `--help` creating a data dir.
 fixtures write dollars ("0.120000"). `parseMicro` scales by 1e6 and must not be
 applied to the integer form. `used_usd` is preferred because it is unambiguous;
 the fallback is integers-as-micro, dotted strings-as-dollars.
+
+### Follow-up: the wildcard CORS was only "safe" with a key
+
+I closed the adversarial pass claiming the remaining CORS behaviour was
+intentional, then re-tested it: on the **loopback no-key default** a page served
+from anywhere got `access-control-allow-origin: *`, HTTP 200 and a real upstream
+call. The original comment justified the wildcard with "the key travels in a
+header" — true only when a key is *required*. With `requireApiKey: false` there is
+no credential for a browser to withhold, so the wildcard turned the proxy into an
+open relay for any site the user visited.
+
+Rule now enforced in `rejectUnsafeOrigin`: when the proxy is unguarded, refuse a
+non-loopback `Origin` (403 `origin_not_allowed`); no `Origin` (CLI, SDK, curl) and
+loopback origins still pass. Guarded proxies keep the wildcard, which leaks
+nothing because the request cannot be authorised without the key.
+
+Lesson: "credentials are header-based, so CORS is safe" is only true if the
+credential is mandatory. Check the *default* configuration, not the guarded one —
+the test harness forces `WARM2API_API_AUTH=on`, which is exactly why the suite
+never saw this.

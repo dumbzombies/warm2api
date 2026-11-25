@@ -113,7 +113,7 @@ Complete and verified. Live service on **http://127.0.0.1:41673**
 - Installer verified from the published URL on this device: clone → compile →
   `warm2api start` → `status` → `stop`.
 
-- **Adversarial pass (2026-11-25) fixed 15 defects**, each with a regression
+- **Adversarial pass (2026-11-25) fixed 16 defects**, each with a regression
   test in `test/regressions.test.ts` or `test/cli-regressions.test.ts`:
   - **No schema migration**: an upgraded database kept the pre-`cache_read_tokens`
     shape, so every `recordUsage`/`recordRequest` threw. `db.ts` now adds missing
@@ -160,6 +160,11 @@ Complete and verified. Live service on **http://127.0.0.1:41673**
     30 s, failed, and left the child running unrecorded. Refused up front.
   - **`--help`/`version` created the data dir and an API key** (ENOENT on a
     read-only path); both are now side-effect free.
+  - **Cross-origin quota theft on the no-key default**: every response carried
+    `access-control-allow-origin: *`, so any web page the operator visited could
+    POST a prompt and read the reply. `rejectUnsafeOrigin` now refuses a
+    non-loopback `Origin` while `requireApiKey` is false; the wildcard stays for
+    guarded proxies, where a page cannot supply the key anyway.
 
 ## Blockers
 
